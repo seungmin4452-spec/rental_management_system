@@ -12,6 +12,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from nacl.signing import VerifyKey
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from rentdesk import __version__
@@ -30,6 +31,7 @@ from rentdesk.platform.environment import get_environment_info
 from rentdesk.platform.instance_lock import InstanceLock
 from rentdesk.platform.paths import AppDataUnavailableError, configure_app_identity
 from rentdesk.platform.preferences import LocalPreferences
+from rentdesk.platform.resources import get_app_icon_path
 from rentdesk.services.backup import (
     BackupError,
     BackupService,
@@ -300,6 +302,7 @@ def run_self_check(output: Path) -> int:
                 window.show()
                 app.processEvents()
                 checks["window_title"] = window.windowTitle()
+                checks["icon_loaded"] = not QIcon(str(get_app_icon_path())).isNull()
                 window.close()
                 result = create_backup(conn, Path(work) / "백업 테스트.zip", now=now_utc())
                 validated = inspect_backup(result.path)
@@ -311,7 +314,7 @@ def run_self_check(output: Path) -> int:
         bogus = verify_license("{}", public_key=VerifyKey(bytes.fromhex(PUBLIC_KEY_HEX)),
                                machine_code="A" * 20, now=now_utc())
         checks["license_rejects_malformed"] = bogus.status == LicenseStatus.MALFORMED
-        ok = bool(checks["license_rejects_malformed"])
+        ok = bool(checks["license_rejects_malformed"] and checks["icon_loaded"])
     except Exception as exc:  # noqa: BLE001 - 결과 파일에 실패 이유를 남긴다
         checks["error"] = f"{exc.__class__.__name__}: {exc}"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -330,6 +333,8 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(args)
     configure_app_identity()
+    if get_app_icon_path().is_file():
+        app.setWindowIcon(QIcon(str(get_app_icon_path())))
 
     try:
         setup_logging(platform_paths.get_logs_dir())

@@ -110,11 +110,11 @@ PRD.md 17.6 지침에 따라 문서에 없는 사항을 임의 구현하지 않�
 | Windows 설치 | Inno Setup 6, 기본 사용자 단위 설치(`PrivilegesRequired=lowest`, 선택 시 전체 사용자), `MinVersion=10.0.22000`(Windows 11), x64 전용, 제거 시 `%LOCALAPPDATA%\RentDeskLite` 보존 안내 | P0 대상이 Windows 11 x64. Windows 10은 검증 후 MinVersion 완화 |
 | CI 패키징 | `package-macos`(ad-hoc DMG), `package-windows`(미서명 setup.exe) 잡 추가, 산출물 14일 보관 | CI 빌드 성공은 실기기 설치 검증(CP-03/04)을 대체하지 않음 |
 | Windows 코드 서명 | **미서명으로 출시 시작**(2026-10-15 사용자 결정). 설치 안내서에 Edge 다운로드 경고·SmartScreen "추가 정보 → 실행"·백신 오탐 대응·SHA-256 확인 절차를 넣고, 판매자는 릴리스마다 설치 파일 SHA-256을 함께 안내. 판매량·문의가 늘면 인증서 구매 재검토 | 인증서 비용(연 수십만 원)과 평판 기반 SmartScreen 특성상 초기 효과가 제한적. PRD 12A.2 "미서명 경고를 판매 페이지에서 숨기지 않는다" 준수 |
-| 앱 아이콘(.icns/.ico) | **미제작**. `RENTDESK_ICON`으로 넣을 수 있게만 함 | 브랜드 이미지가 아직 없음 → 사용자 확인 필요 |
+| 앱 아이콘(.icns/.ico) | 파란 둥근 타일 + 흰 달력(주황 머리띠) + 초록 체크 = "예약 확정·일정 관리". `scripts/make_icons.py`가 Qt로 그려 `.icns`(macOS, iconutil)·`.ico`(16~256px)·실행 중 창 아이콘 PNG를 생성. 원본 `packaging/icons/RentDeskLite_1024.png` | 사용자 요청(2026-10-15 "어울리는 아이콘 제작"). 외부 이미지·폰트 없이 코드로 그려 라이선스 문제 없음, 16px에서도 식별 가능하게 단순화 |
 
 ## 다음 확인 필요
 
 - Windows 네이티브 빌드/실기기 검증을 GitHub Actions만으로 끝낼지, 추가로 실제 Windows PC/VM에서 설치형 테스트를 할지는 M4 착수 시 재확인.
 - macOS 서명/공증용 Apple Developer 계정(Developer ID Application 인증서, 연 99달러) 보유 여부 — 서명·공증 스크립트는 준비됨, 실행에 필요.
-- 정식 번들 ID(`com.<도메인>.rentdesklite`), 앱 아이콘 원본 이미지.
+- 정식 번들 ID(`com.<도메인>.rentdesklite`).
 - 사용권 이전 재발급 횟수 등 라이선스 약관(`docs/license_operations.md` 가설).

@@ -35,6 +35,7 @@ SolidCompression=yes
 WizardStyle=modern
 UninstallDisplayName=RentDesk Lite
 UninstallDisplayIcon={app}\RentDeskLite.exe
+SetupIconFile=RentDeskLite.ico
 CloseApplications=yes
 ; Authenticode 서명은 선택. 서명할 때만 SignTool을 설정(인증서는 저장소 밖, CI 비밀값)
 ; SignTool=rentdesksign

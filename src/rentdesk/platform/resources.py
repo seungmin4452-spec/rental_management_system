@@ -16,3 +16,8 @@ def get_resources_dir() -> Path:
 
 def get_sample_data_dir() -> Path:
     return get_resources_dir() / "sample_data"
+
+
+def get_app_icon_path() -> Path:
+    """창·작업 표시줄 아이콘(256px PNG). 원본은 `scripts/make_icons.py`로 생성."""
+    return get_resources_dir() / "icons" / "app.png"

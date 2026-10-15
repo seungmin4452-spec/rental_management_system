@@ -19,7 +19,7 @@ python3.12 -m venv .venv && source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -e '.[dev,build]'      # build = PyInstaller (M4부터 사용)
 
-QT_QPA_PLATFORM=offscreen python -m pytest -q   # 현재 384 passed (Windows에서는 POSIX 권한 테스트 3개 skip 예정)
+QT_QPA_PLATFORM=offscreen python -m pytest -q   # 현재 387 passed (Windows에서는 POSIX 권한 테스트 3개 skip 예정)
 python -m rentdesk                               # 실제 GUI 실행 → 라이선스 확인 화면이 먼저 뜸
 scripts/build_macos.sh                           # .app + .dmg (ad-hoc 서명, 공증 생략)
 ```
@@ -43,6 +43,7 @@ scripts/build_macos.sh                           # .app + .dmg (ad-hoc 서명, �
 - `app.py` — `AppPaths`, `AppController`(라이선스 게이트 → 실제/예제 모드, 복원 후 화면 재시작), 시작 시 손상 DB 복구(`recover_corrupt_database`), 패키징 자기 점검 `--self-check <json>`.
 - `ui/` — 설정 화면 "데이터 백업·복원"·"라이선스" 그룹(스크롤 영역으로 변경), `ui/backup_actions.py`, `ui/dialogs/license_dialog.py`(LicensePanel/LicenseDialog), 메인 창 백업 권장 배너.
 - 패키징 — `packaging/pyinstaller/rentdesk.spec`, `packaging/macos/{sign_app.sh,create_dmg.sh,notarize.sh,entitlements.plist}`, `packaging/windows/rentdesk.iss`, `scripts/{build_macos.sh,smoke_macos.sh,build_windows.ps1,smoke_windows.ps1}`, CI `package-macos`/`package-windows` 잡.
+- 앱 아이콘 — `scripts/make_icons.py`로 생성한 `.icns`/`.ico`/창 아이콘 PNG를 spec·Inno Setup·앱 실행에 연결(자기 점검에서 로드 확인).
 - 문서 — `docs/install_macos.md`, `docs/install_windows.md`, `docs/license_operations.md`. 결정 사항은 `OPEN_QUESTIONS.md` "M4" 표.
 - 버전 단일화: `rentdesk.__version__`(0.1.0)을 pyproject·번들·설치파일·manifest가 공유.
 
@@ -80,7 +81,7 @@ M4 신규 테스트:
 
 ### 미완료/주의사항
 
-- **결정 필요(사용자)**: Apple Developer 계정·Developer ID 인증서, 정식 번들 ID(현재 `com.example.rentdesklite`), 앱 아이콘 원본, 라이선스 이전 약관.
+- **결정 필요(사용자)**: Apple Developer 계정·Developer ID 인증서, 정식 번들 ID(현재 `com.example.rentdesklite`), 라이선스 이전 약관.
 - `entitlements.plist`의 `allow-unsigned-executable-memory`는 Developer ID 서명 후 실제 필요 여부 확인 필요.
 - Inno Setup 스크립트의 `Korean.isl`이 CI의 Inno Setup 버전에 포함되어 있는지 Windows 빌드 때 확인(없으면 언어 항목 조정).
 - Windows: `build_windows.ps1`/`smoke_windows.ps1`/`.iss`는 Windows에서 한 번도 실행하지 않았음.
