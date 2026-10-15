@@ -501,9 +501,20 @@ def list_orders(
     customer_id: int | None = None,
     period_start: datetime | None = None,
     period_end: datetime | None = None,
+    query: str = "",
 ) -> list[RentalOrder]:
-    """기간 필터는 예약 기간 `[start, due)`가 `[period_start, period_end)`와 겹치는 주문."""
+    """기간 필터는 예약 기간 `[start, due)`가 `[period_start, period_end)`와 겹치는 주문.
+
+    `query`는 예약번호 또는 고객명 부분 일치.
+    """
     clauses, params = [], []
+    if query:
+        pattern = _like_pattern(query)
+        clauses.append(
+            "(order_no LIKE ? ESCAPE '\\' OR customer_id IN"
+            " (SELECT id FROM customers WHERE name LIKE ? ESCAPE '\\'))"
+        )
+        params += [pattern, pattern]
     if statuses:
         clauses.append(f"status IN ({_placeholders(len(statuses))})")
         params += [s.value for s in statuses]
@@ -877,3 +888,114 @@ def delete_asset(conn: sqlite3.Connection, asset_id: int) -> None:
 
 def delete_customer(conn: sqlite3.Connection, customer_id: int) -> None:
     conn.execute("DELETE FROM customers WHERE id = ?", (customer_id,))
+
+
+# --------------------------------------------------------------------------- read models (M3 화면/보고서)
+
+
+def customer_names(conn: sqlite3.Connection, customer_ids: Iterable[int]) -> dict[int, str]:
+    ids = sorted(set(customer_ids))
+    if not ids:
+        return {}
+    rows = conn.execute(
+        f"SELECT id, name FROM customers WHERE id IN ({_placeholders(len(ids))})", ids
+    )
+    return {r["id"]: r["name"] for r in rows}
+
+
+def out_item_details(conn: sqlite3.Connection) -> list[sqlite3.Row]:
+    """현재 OUT 품목 + 주문·고객·장비 정보(대시보드 연체/오늘 반납, 연체 보고서)."""
+    return conn.execute(
+        """
+        SELECT i.id AS item_id, i.asset_id, a.asset_code, a.name AS asset_name,
+               i.daily_rate_snapshot_won, i.late_multiplier_snapshot, i.grace_minutes_snapshot,
+               o.id AS order_id, o.order_no, o.due_at_utc, o.start_at_utc,
+               c.id AS customer_id, c.name AS customer_name
+        FROM rental_items i
+        JOIN rental_orders o ON o.id = i.order_id
+        JOIN assets a ON a.id = i.asset_id
+        JOIN customers c ON c.id = o.customer_id
+        WHERE i.status = 'OUT'
+        ORDER BY o.due_at_utc, a.asset_code
+        """
+    ).fetchall()
+
+
+def schedule_item_rows(
+    conn: sqlite3.Connection, start: datetime, end: datetime
+) -> list[sqlite3.Row]:
+    """`[start, end)` 안에 출고 예정(시작) 또는 반납 예정(약정 반납)인 확정 이후 주문의 품목."""
+    s, e = to_utc_str(start), to_utc_str(end)
+    return conn.execute(
+        """
+        SELECT i.id AS item_id, i.status AS item_status, i.actual_return_at_utc,
+               a.asset_code, a.name AS asset_name,
+               o.id AS order_id, o.order_no, o.status AS order_status,
+               o.start_at_utc, o.due_at_utc, o.actual_checkout_at_utc,
+               c.name AS customer_name
+        FROM rental_items i
+        JOIN rental_orders o ON o.id = i.order_id
+        JOIN assets a ON a.id = i.asset_id
+        JOIN customers c ON c.id = o.customer_id
+        WHERE o.status IN ('CONFIRMED', 'IN_RENTAL', 'COMPLETED')
+          AND i.status <> 'CANCELED'
+          AND ((o.start_at_utc >= ? AND o.start_at_utc < ?)
+               OR (o.due_at_utc >= ? AND o.due_at_utc < ?))
+        ORDER BY o.start_at_utc, o.order_no, a.asset_code
+        """,
+        (s, e, s, e),
+    ).fetchall()
+
+
+def list_block_rows(
+    conn: sqlite3.Connection, *, include_closed: bool = False, asset_id: int | None = None
+) -> list[sqlite3.Row]:
+    clauses, params = [], []
+    if not include_closed:
+        clauses.append("b.closed_at_utc IS NULL")
+    if asset_id is not None:
+        clauses.append("b.asset_id = ?")
+        params.append(asset_id)
+    sql = (
+        "SELECT b.*, a.asset_code, a.name AS asset_name FROM maintenance_blocks b"
+        " JOIN assets a ON a.id = b.asset_id"
+    )
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
+    sql += " ORDER BY b.start_at_utc DESC, b.id DESC"
+    return conn.execute(sql, params).fetchall()
+
+
+def all_blocks(conn: sqlite3.Connection) -> list[MaintenanceBlock]:
+    return [_row_to_block(r) for r in conn.execute("SELECT * FROM maintenance_blocks")]
+
+
+def asset_order_rows(conn: sqlite3.Connection, asset_id: int) -> list[sqlite3.Row]:
+    """장비 상세: 이 장비가 포함된 모든 예약(최근 시작 순)."""
+    return conn.execute(
+        """
+        SELECT o.id AS order_id, o.order_no, o.status AS order_status,
+               o.start_at_utc, o.due_at_utc, o.actual_checkout_at_utc,
+               i.status AS item_status, i.actual_return_at_utc, i.return_condition,
+               c.name AS customer_name
+        FROM rental_items i
+        JOIN rental_orders o ON o.id = i.order_id
+        JOIN customers c ON c.id = o.customer_id
+        WHERE i.asset_id = ?
+        ORDER BY o.start_at_utc DESC, o.id DESC
+        """,
+        (asset_id,),
+    ).fetchall()
+
+
+def search_orders_by_no(conn: sqlite3.Connection, query: str, limit: int = 20) -> list[sqlite3.Row]:
+    return conn.execute(
+        """
+        SELECT o.id AS order_id, o.order_no, o.status, o.start_at_utc, o.due_at_utc,
+               c.name AS customer_name
+        FROM rental_orders o JOIN customers c ON c.id = o.customer_id
+        WHERE o.order_no LIKE ? ESCAPE '\\'
+        ORDER BY o.start_at_utc DESC LIMIT ?
+        """,
+        (_like_pattern(query), limit),
+    ).fetchall()

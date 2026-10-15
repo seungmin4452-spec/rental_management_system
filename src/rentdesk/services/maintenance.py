@@ -13,10 +13,46 @@ from datetime import datetime
 from rentdesk.domain import availability as av
 from rentdesk.domain.errors import ConflictInfo, InvalidStateError, NotFoundError, ValidationError
 from rentdesk.domain.models import MaintenanceBlock
-from rentdesk.domain.timeutil import parse_utc_str, to_utc
+from rentdesk.domain.timeutil import parse_utc_str, parse_utc_str_opt, to_utc
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
 from rentdesk.services.common import Clock, clean_required, current_time, default_clock
+
+
+@dataclass(frozen=True)
+class BlockRow:
+    """정비 목록(S-08) 행."""
+
+    block_id: int
+    asset_id: int
+    asset_code: str
+    asset_name: str
+    start_at: datetime
+    end_at: datetime | None
+    reason: str
+    closed_at: datetime | None
+
+    def active_at(self, at: datetime) -> bool:
+        return av.block_active_at(self.start_at, self.end_at, at)
+
+    def state_label(self, at: datetime) -> str:
+        if self.active_at(at):
+            return "진행 중"
+        return "예정" if at < self.start_at else "종료"
+
+
+def list_block_rows(
+    conn: sqlite3.Connection, *, include_closed: bool = False, asset_id: int | None = None
+) -> list[BlockRow]:
+    return [
+        BlockRow(
+            block_id=r["id"], asset_id=r["asset_id"], asset_code=r["asset_code"],
+            asset_name=r["asset_name"], start_at=parse_utc_str(r["start_at_utc"]),
+            end_at=parse_utc_str_opt(r["end_at_utc"]), reason=r["reason"],
+            closed_at=parse_utc_str_opt(r["closed_at_utc"]),
+        )
+        for r in repo.list_block_rows(conn, include_closed=include_closed, asset_id=asset_id)
+    ]
 
 
 @dataclass(frozen=True)
@@ -100,6 +136,12 @@ class MaintenanceService:
         return affected_confirmed_reservations(
             self._conn, asset_id, to_utc(start_at), to_utc(end_at) if end_at else None
         )
+
+    def list_blocks(
+        self, *, include_closed: bool = False, asset_id: int | None = None
+    ) -> list[BlockRow]:
+        """미종료(기본) 또는 전체 정비 일정. 종료 시각이 있는 미래 블록도 '미종료'에 포함."""
+        return list_block_rows(self._conn, include_closed=include_closed, asset_id=asset_id)
 
     def close_block(self, block_id: int, end_at: datetime | None = None) -> MaintenanceBlock:
         """정비 종료. 종료 시각 미지정 시 현재 시각. 해당 시각부터 예약 가능으로 재평가된다."""

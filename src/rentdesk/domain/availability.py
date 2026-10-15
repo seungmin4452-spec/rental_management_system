@@ -134,3 +134,47 @@ def validate_reservation_window(
         raise ValidationError("due_at", "약정 반납 일시는 시작 일시보다 뒤여야 합니다.")
     if require_future_start and start_at < floor_minute(now):
         raise ValidationError("start_at", "예약 시작 일시는 현재 시각 이전일 수 없습니다.")
+
+
+class AssetState(StrEnum):
+    """화면 표시용 현재 가용 상태(계산값). `assets`에 수동 상태 컬럼을 두지 않는다(W-05)."""
+
+    AVAILABLE = "AVAILABLE"
+    RENTED = "RENTED"
+    OVERDUE = "OVERDUE"
+    MAINTENANCE = "MAINTENANCE"
+    RETIRED = "RETIRED"
+
+
+ASSET_STATE_LABELS = {
+    AssetState.AVAILABLE: "사용 가능",
+    AssetState.RENTED: "대여 중",
+    AssetState.OVERDUE: "연체",
+    AssetState.MAINTENANCE: "정비 중",
+    AssetState.RETIRED: "은퇴",
+}
+
+
+def current_asset_state(
+    *,
+    retired: bool,
+    out_due_at: datetime | None,
+    in_maintenance: bool,
+    now: datetime,
+) -> AssetState:
+    """현재 시각 기준 장비 상태. 우선순위: 대여 중/연체 > 정비 > 은퇴 > 사용 가능.
+
+    대여 중인 장비는 은퇴할 수 없지만, 과거 데이터 이상에 대비해 실물 위치(대여 중)를 먼저 보인다.
+    """
+    if out_due_at is not None:
+        return AssetState.OVERDUE if now > out_due_at else AssetState.RENTED
+    if in_maintenance:
+        return AssetState.MAINTENANCE
+    if retired:
+        return AssetState.RETIRED
+    return AssetState.AVAILABLE
+
+
+def block_active_at(start_at: datetime, end_at: datetime | None, at: datetime) -> bool:
+    """정비 블록 `[start, end)`가 `at` 시각을 포함하는지."""
+    return start_at <= at and (end_at is None or at < end_at)

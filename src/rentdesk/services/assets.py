@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
+from datetime import datetime
 
 from rentdesk.domain.errors import (
     DuplicateError,
@@ -11,9 +12,9 @@ from rentdesk.domain.errors import (
     NotFoundError,
     ValidationError,
 )
-from rentdesk.domain.models import Asset, Category, LifecycleStatus
+from rentdesk.domain.models import Asset, Category, ItemStatus, LifecycleStatus, OrderStatus
 from rentdesk.domain.pricing import validate_won
-from rentdesk.domain.timeutil import format_seoul, parse_utc_str
+from rentdesk.domain.timeutil import format_seoul, parse_utc_str, parse_utc_str_opt
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
 from rentdesk.services.common import (
@@ -68,6 +69,26 @@ def _clean(data: AssetInput) -> _CleanAsset:
     )
 
 
+@dataclass(frozen=True)
+class AssetOrderRow:
+    """장비 상세(W-05)의 예약/대여 이력 1행."""
+
+    order_id: int
+    order_no: str
+    order_status: OrderStatus
+    item_status: ItemStatus
+    customer_name: str
+    start_at: datetime
+    due_at: datetime
+    actual_checkout_at: datetime | None
+    actual_return_at: datetime | None
+
+    @property
+    def is_upcoming(self) -> bool:
+        """출고 전 확정·임시 예약(예정 예약 탭)."""
+        return self.order_status in (OrderStatus.DRAFT, OrderStatus.CONFIRMED)
+
+
 class AssetService:
     def __init__(self, conn: sqlite3.Connection, clock: Clock = default_clock) -> None:
         self._conn = conn
@@ -109,6 +130,20 @@ class AssetService:
         if asset is None:
             raise NotFoundError("장비를 찾을 수 없습니다.")
         return asset
+
+    def asset_orders(self, asset_id: int) -> list[AssetOrderRow]:
+        self.get_asset(asset_id)
+        return [
+            AssetOrderRow(
+                order_id=r["order_id"], order_no=r["order_no"],
+                order_status=OrderStatus(r["order_status"]),
+                item_status=ItemStatus(r["item_status"]), customer_name=r["customer_name"],
+                start_at=parse_utc_str(r["start_at_utc"]), due_at=parse_utc_str(r["due_at_utc"]),
+                actual_checkout_at=parse_utc_str_opt(r["actual_checkout_at_utc"]),
+                actual_return_at=parse_utc_str_opt(r["actual_return_at_utc"]),
+            )
+            for r in repo.asset_order_rows(self._conn, asset_id)
+        ]
 
     def search_assets(
         self, query: str = "", *, include_retired: bool = False, category_id: int | None = None

@@ -98,6 +98,46 @@ def quote_items(
     )
 
 
+@dataclass(frozen=True)
+class OrderRow:
+    order: RentalOrder
+    customer_name: str
+    item_count: int
+    expected_total_rental_fee_won: int
+    expected_deposit_won: int
+    out_count: int
+    returned_count: int
+
+    @property
+    def progress_label(self) -> str:
+        """출고/반납 여부 표시."""
+        if self.order.status in PRE_CHECKOUT_STATUSES:
+            return "출고 전"
+        if self.order.status == OrderStatus.CANCELED:
+            return "-"
+        if self.out_count == 0:
+            return "전체 반납"
+        if self.returned_count == 0:
+            return "출고됨"
+        return f"부분 반납 ({self.returned_count}/{self.item_count})"
+
+
+def order_row(order: RentalOrder, customer_name: str) -> OrderRow:
+    items = [i for i in order.items if i.status != ItemStatus.CANCELED]
+    if order.status == OrderStatus.CANCELED:
+        items = list(order.items)
+    quote = quote_items(items, order.start_at, order.due_at, order.discount_won)
+    return OrderRow(
+        order=order,
+        customer_name=customer_name,
+        item_count=len(items),
+        expected_total_rental_fee_won=quote.expected_total_rental_fee_won,
+        expected_deposit_won=quote.expected_deposit_won,
+        out_count=sum(1 for i in items if i.status == ItemStatus.OUT),
+        returned_count=sum(1 for i in items if i.status == ItemStatus.RETURNED),
+    )
+
+
 class ReservationService:
     def __init__(self, conn: sqlite3.Connection, clock: Clock = default_clock) -> None:
         self._conn = conn
@@ -118,11 +158,32 @@ class ReservationService:
         customer_id: int | None = None,
         period_start: datetime | None = None,
         period_end: datetime | None = None,
+        query: str = "",
     ) -> list[RentalOrder]:
         return repo.list_orders(
             self._conn, statuses=statuses, customer_id=customer_id,
-            period_start=period_start, period_end=period_end,
+            period_start=period_start, period_end=period_end, query=query.strip(),
         )
+
+    def list_order_rows(
+        self,
+        *,
+        statuses: Sequence[OrderStatus] | None = None,
+        customer_id: int | None = None,
+        period_start: datetime | None = None,
+        period_end: datetime | None = None,
+        query: str = "",
+    ) -> list[OrderRow]:
+        """예약 목록(S-04) 행: 고객명·장비 수·예상 대여료·출고/반납 진행 상황."""
+        orders = self.list_orders(
+            statuses=statuses, customer_id=customer_id, period_start=period_start,
+            period_end=period_end, query=query,
+        )
+        names = repo.customer_names(self._conn, (o.customer_id for o in orders))
+        return [order_row(o, names.get(o.customer_id, "")) for o in orders]
+
+    def customer_name(self, order: RentalOrder) -> str:
+        return repo.customer_names(self._conn, [order.customer_id]).get(order.customer_id, "")
 
     def quote(self, order: RentalOrder) -> OrderQuote:
         """주문 스냅샷 기준 예상 대여료/보증금. 취소 품목은 제외."""
@@ -135,15 +196,28 @@ class ReservationService:
         start_at: datetime,
         due_at: datetime,
         discount_won: int = 0,
+        *,
+        order_id: int | None = None,
     ) -> OrderQuote:
-        """예약 작성 3단계 화면용: 현재 장비 단가 기준 예상 금액."""
+        """예약 작성 3단계 화면용 예상 금액.
+
+        신규/임시저장 예약은 현재 장비 단가 기준(확정 시 다시 스냅샷).
+        `order_id`가 확정 예약이면 기존 품목은 스냅샷 단가, 새로 추가한 품목만 현재 단가.
+        """
         assets = repo.get_assets(self._conn, list(asset_ids))
         if len(assets) != len(set(asset_ids)):
             raise ValidationError("asset_ids", "존재하지 않는 장비가 포함되어 있습니다.")
-        return quote_order(
-            [PricedItem(a.daily_rate_won, a.deposit_won) for a in assets.values()],
-            to_utc(start_at), to_utc(due_at), discount_won,
-        )
+        snapshots: dict[int, RentalItem] = {}
+        if order_id is not None:
+            order = self.get_order(order_id)
+            if order.status == OrderStatus.CONFIRMED:
+                snapshots = {i.asset_id: i for i in order.items}
+        priced = [
+            PricedItem(snapshots[a.id].daily_rate_snapshot_won, snapshots[a.id].deposit_snapshot_won)
+            if a.id in snapshots else PricedItem(a.daily_rate_won, a.deposit_won)
+            for a in assets.values()
+        ]
+        return quote_order(priced, to_utc(start_at), to_utc(due_at), discount_won)
 
     # ------------------------------------------------------------------ commands
 
@@ -160,11 +234,14 @@ class ReservationService:
             self._confirm_in_txn(order_id, now)
         return self.get_order(order_id)
 
-    def update_order(self, order_id: int, data: ReservationInput) -> RentalOrder:
+    def update_order(
+        self, order_id: int, data: ReservationInput, *, confirm: bool = False
+    ) -> RentalOrder:
         """출고 전(DRAFT/CONFIRMED) 예약의 고객·기간·장비·할인·메모 수정.
 
         CONFIRMED: 기존 품목은 스냅샷 단가를 유지하고, 추가 품목만 현재 단가로 스냅샷.
         수정 결과를 같은 트랜잭션 안에서 충돌 재검사하며, 충돌 시 전체 롤백.
+        `confirm=True`이면 DRAFT 수정과 확정을 한 트랜잭션으로 처리한다(확정 실패 시 수정도 롤백).
         """
         clean = _clean_input(data)
         now = current_time(self._clock)
@@ -214,6 +291,10 @@ class ReservationService:
                 self._conn, entity_type="rental_order", entity_id=order_id, action="UPDATE",
                 description=order.order_no, now=now,
             )
+            if confirm:
+                if order.status != OrderStatus.DRAFT:
+                    raise InvalidStateError("임시저장 상태의 예약만 확정할 수 있습니다.")
+                self._confirm_in_txn(order_id, now)
         return self.get_order(order_id)
 
     def cancel(self, order_id: int) -> RentalOrder:

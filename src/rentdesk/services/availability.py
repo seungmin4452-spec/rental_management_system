@@ -95,6 +95,22 @@ def describe_conflict(c: ConflictInfo) -> str:
 
 
 @dataclass(frozen=True)
+class AssetOption:
+    """예약 작성 2단계: 장비별 기간 내 예약 가능 여부와 불가 사유."""
+
+    asset: Asset
+    conflicts: tuple[ConflictInfo, ...]
+
+    @property
+    def available(self) -> bool:
+        return not self.conflicts
+
+    @property
+    def reason(self) -> str:
+        return "\n".join(describe_conflict(c) for c in self.conflicts)
+
+
+@dataclass(frozen=True)
 class OverdueItem:
     item_id: int
     asset_id: int
@@ -156,6 +172,52 @@ class AvailabilityService:
             a for a in assets
             if a.id not in blocked and a.lifecycle_status == LifecycleStatus.ACTIVE
         ]
+
+    def asset_options(
+        self,
+        start_at: datetime,
+        due_at: datetime,
+        *,
+        query: str = "",
+        category_id: int | None = None,
+        exclude_order_id: int | None = None,
+        buffer_minutes: int | None = None,
+    ) -> list[AssetOption]:
+        """ACTIVE 장비 전체와 각 장비의 충돌 목록(사용 불가 장비는 이유·겹치는 예약번호 표시용)."""
+        assets = repo.search_assets(
+            self._conn, query=query.strip(), include_retired=False, category_id=category_id
+        )
+        if not assets:
+            return []
+        conflicts = self.find_conflicts(
+            [a.id for a in assets], start_at, due_at, buffer_minutes=buffer_minutes,
+            exclude_order_id=exclude_order_id,
+        )
+        by_asset: dict[int, list[ConflictInfo]] = {}
+        for c in conflicts:
+            by_asset.setdefault(c.asset_id, []).append(c)
+        return [AssetOption(a, tuple(by_asset.get(a.id, ()))) for a in assets]
+
+    def asset_states(self, assets: Sequence[Asset]) -> dict[int, av.AssetState]:
+        """장비 목록(S-02)의 '가용 상태' 계산값(현재 시각 기준)."""
+        now = current_time(self._clock)
+        ids = [a.id for a in assets]
+        out_due = {
+            row["asset_id"]: parse_utc_str(row["due_at_utc"]) for row in repo.out_item_rows(self._conn)
+        }
+        in_maintenance = {
+            b.asset_id for b in repo.blocks_for_assets(self._conn, ids)
+            if av.block_active_at(b.start_at, b.end_at, now)
+        }
+        return {
+            a.id: av.current_asset_state(
+                retired=a.lifecycle_status == LifecycleStatus.RETIRED,
+                out_due_at=out_due.get(a.id),
+                in_maintenance=a.id in in_maintenance,
+                now=now,
+            )
+            for a in assets
+        }
 
     def overdue_items(self) -> list[OverdueItem]:
         now = current_time(self._clock)

@@ -52,3 +52,14 @@ def get_default_backup_dir() -> Path:
     backup_dir = get_app_data_dir() / "backups"
     backup_dir.mkdir(parents=True, exist_ok=True)
     return backup_dir
+
+
+def get_demo_db_path() -> Path:
+    """예제 데이터 모드 전용 DB. 실제 사용자 DB(`data/rentdesk.db`)와 다른 폴더에 둔다."""
+    demo_dir = get_app_data_dir() / "demo"
+    demo_dir.mkdir(parents=True, exist_ok=True)
+    return demo_dir / "rentdesk_demo.db"
+
+
+def get_lock_path() -> Path:
+    return get_app_data_dir() / "rentdesk.lock"

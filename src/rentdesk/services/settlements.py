@@ -54,6 +54,15 @@ class UnsettledOrder:
     summary: st.SettlementSummary
 
 
+@dataclass(frozen=True)
+class SettlementRow:
+    """정산 내역 목록 행."""
+
+    order: RentalOrder
+    customer_name: str
+    summary: st.SettlementSummary
+
+
 def load_summary(conn: sqlite3.Connection, order_id: int) -> st.SettlementSummary:
     totals = repo.ledger_totals_by_order(conn, [order_id])[order_id]
     return st.summarize(*totals)
@@ -163,6 +172,19 @@ class SettlementService:
             if not summary.is_settled:
                 result.append(UnsettledOrder(order.id, order.order_no, order.status, summary))
         return result
+
+    def list_rows(self, *, unsettled_only: bool = True) -> list[SettlementRow]:
+        """출고 이후 주문의 정산 현황(기본: 미정산만). 시작 시각 최신순."""
+        orders = repo.list_orders(self._conn, statuses=sorted(MONEY_ALLOWED_STATUSES))
+        totals = repo.ledger_totals_by_order(self._conn, [o.id for o in orders])
+        names = repo.customer_names(self._conn, (o.customer_id for o in orders))
+        rows = []
+        for order in orders:
+            summary = st.summarize(*totals[order.id])
+            if unsettled_only and summary.is_settled:
+                continue
+            rows.append(SettlementRow(order, names.get(order.customer_id, ""), summary))
+        return rows
 
     def _get_order(self, order_id: int) -> RentalOrder:
         order = repo.get_order(self._conn, order_id)

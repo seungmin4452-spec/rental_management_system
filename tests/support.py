@@ -11,9 +11,12 @@ from rentdesk.services.assets import AssetInput, AssetService
 from rentdesk.services.availability import AvailabilityService
 from rentdesk.services.checkout import CheckoutInput, CheckoutService
 from rentdesk.services.customers import CustomerInput, CustomerService
+from rentdesk.services.dashboard import DashboardService
 from rentdesk.services.maintenance import MaintenanceService
-from rentdesk.services.reservations import ReservationService
+from rentdesk.services.reports import ReportService
+from rentdesk.services.reservations import ReservationInput, ReservationService
 from rentdesk.services.returns import ReturnItemInput, ReturnResult, ReturnService
+from rentdesk.services.search import SearchService
 from rentdesk.services.settings import SettingsService
 from rentdesk.services.settlements import SettlementService
 
@@ -47,6 +50,9 @@ class Services:
         self.checkout_svc = CheckoutService(conn, clock)
         self.returns = ReturnService(conn, clock)
         self.settlements = SettlementService(conn, clock)
+        self.dashboard = DashboardService(conn, clock)
+        self.reports = ReportService(conn, clock)
+        self.search = SearchService(conn)
 
     def add_asset(self, code: str, *, rate: int = 30_000, deposit: int = 100_000,
                   category: str = "카메라", name: str = "미러리스 카메라 A") -> Asset:
@@ -57,6 +63,14 @@ class Services:
 
     def add_customer(self, name: str = "김고객") -> Customer:
         return self.customers.create_customer(CustomerInput(name=name))
+
+    def book(self, customer_id: int, asset_ids: list[int], start: datetime, due: datetime,
+             *, confirm: bool = True, discount: int = 0) -> RentalOrder:
+        data = ReservationInput(customer_id=customer_id, start_at=start, due_at=due,
+                                asset_ids=asset_ids, discount_won=discount)
+        if confirm:
+            return self.reservations.create_confirmed(data)
+        return self.reservations.create_draft(data)
 
     def set_buffer(self, minutes: int) -> None:
         policy = self.settings.get_policy()
