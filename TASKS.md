@@ -12,12 +12,12 @@
 - [x] 샘플 데이터 및 데모 모드 계획 (`OPEN_QUESTIONS.md`, 구현은 M1 이후)
 
 ## M1. 데이터 / 예약 코어
-- [ ] SQLite 연결·FK 활성화·마이그레이션·트랜잭션 헬퍼
-- [ ] assets/categories/customers CRUD
-- [ ] rental_orders/rental_items 데이터형·리포지토리
-- [ ] availability 시간 겹침·버퍼·정비 블록·연체 미반납
-- [ ] 예약 임시저장/확정/수정/취소
-- [ ] T-01~T-06, T-13~T-14 통과
+- [x] SQLite 연결·FK 활성화·마이그레이션·트랜잭션 헬퍼
+- [x] assets/categories/customers CRUD
+- [x] rental_orders/rental_items 데이터형·리포지토리
+- [x] availability 시간 겹침·버퍼·정비 블록·연체 미반납
+- [x] 예약 임시저장/확정/수정/취소
+- [x] T-01~T-06, T-13~T-14 통과 (macOS arm64 로컬 확인. Windows 검증은 전체 완료 후 일괄)
 
 ## M2. 출고 / 반납 / 정산
 - [ ] 일 대여료·할인·연체료 `Decimal` 계산
