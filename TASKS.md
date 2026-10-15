@@ -3,13 +3,13 @@
 > P0만 먼저 수행. 체크박스는 실제 테스트가 통과한 후 변경한다.
 
 ## M0. 개발 환경 / 규칙
-- [ ] PRD/CLAUDE 파일 확인 및 아키텍처 결정 기록
-- [ ] **맥북에서** Python 3.12 가상환경, 의존성 잠금, pytest 설정
-- [ ] macOS arm64 / Windows 11 x64 지원 범위·최소 OS 버전 검증 계획 확정
-- [ ] OS 경로 어댑터(`QStandardPaths`), OS 정보/라이선스 기기 ID 어댑터 인터페이스 정의
-- [ ] Windows 네이티브 빌드 환경(Windows PC/VM 또는 CI Windows runner) 준비
-- [ ] 초기 패키지 구조·메인 창 생성
-- [ ] 샘플 데이터 및 데모 모드 계획
+- [x] PRD/CLAUDE 파일 확인 및 아키텍처 결정 기록 (`OPEN_QUESTIONS.md`)
+- [x] **맥북에서** Python 3.12 가상환경, 의존성 잠금, pytest 설정
+- [x] macOS arm64 / Windows 11 x64 지원 범위·최소 OS 버전 검증 계획 확정 (`OPEN_QUESTIONS.md`)
+- [x] OS 경로 어댑터(`QStandardPaths`), OS 정보/라이선스 기기 ID 어댑터 인터페이스 정의
+- [x] Windows 네이티브 빌드 환경(Windows PC/VM 또는 CI Windows runner) 준비 — GitHub Actions `windows-latest` + `macos-14`, CI 실제 통과 확인
+- [x] 초기 패키지 구조·메인 창 생성
+- [x] 샘플 데이터 및 데모 모드 계획 (`OPEN_QUESTIONS.md`, 구현은 M1 이후)
 
 ## M1. 데이터 / 예약 코어
 - [ ] SQLite 연결·FK 활성화·마이그레이션·트랜잭션 헬퍼
