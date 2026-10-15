@@ -80,10 +80,11 @@ M4 신규 테스트:
 
 ### 미완료/주의사항
 
-- **결정 필요(사용자)**: Apple Developer 계정·Developer ID 인증서, 정식 번들 ID(현재 `com.example.rentdesklite`), 앱 아이콘 원본, Windows 코드서명 인증서 구매 여부, 라이선스 이전 약관.
+- **결정 필요(사용자)**: Apple Developer 계정·Developer ID 인증서, 정식 번들 ID(현재 `com.example.rentdesklite`), 앱 아이콘 원본, 라이선스 이전 약관.
 - `entitlements.plist`의 `allow-unsigned-executable-memory`는 Developer ID 서명 후 실제 필요 여부 확인 필요.
 - Inno Setup 스크립트의 `Korean.isl`이 CI의 Inno Setup 버전에 포함되어 있는지 Windows 빌드 때 확인(없으면 언어 항목 조정).
 - Windows: `build_windows.ps1`/`smoke_windows.ps1`/`.iss`는 Windows에서 한 번도 실행하지 않았음.
+- Windows는 **미서명으로 출시 시작**(사용자 결정). 설치 안내서에 SmartScreen·백신 오탐·SHA-256 확인 절차 반영. 판매 시 설치 파일 SHA-256(`build_windows.ps1`이 출력)을 고객에게 함께 안내하고, 판매 페이지에 "설치 시 Windows 보안 경고가 나올 수 있음"을 명시할 것. 안내서의 화면 캡처는 Windows 실기기 검증 때 추가.
 - 고객 목록 엑셀(M3 보류)·조기 반납 환급·부분 출고·캘린더·자동/암호화 백업은 P1(구현하지 않음).
 
 ## 다음 단계

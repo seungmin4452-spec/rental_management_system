@@ -117,9 +117,10 @@ DB 마이그레이션 누계: `001_initial`(M1), `002_checkout_note`(M2). M3·M4
 | Apple Developer 계정·Developer ID Application 인증서 | 없으면 macOS 판매용 서명·공증 불가 |
 | 정식 번들 ID(현재 임시 `com.example.rentdesklite`) | 출시 후 변경 어려움 |
 | 앱 아이콘 원본 이미지(.icns/.ico) | 현재 기본 아이콘 |
-| Windows Authenticode 인증서 구매 여부 | 미서명 시 SmartScreen 경고 |
 | 라이선스 이전·재발급 약관(횟수, 동시 사용) | `docs/license_operations.md`에 가설로만 기재 |
 | 고객 목록 엑셀 출력 포함 여부 | 개인정보 최소화 원칙으로 P0에서 제외해 둠 |
+
+결정 완료: **Windows는 코드 서명 없이 출시 시작**(2026-10-15). 설치 안내서(`docs/install_windows.md`)에 브라우저 다운로드 경고, SmartScreen "추가 정보 → 실행", 백신 오탐 대응, SHA-256 확인 절차를 추가했다. 판매 시 설치 파일 SHA-256을 함께 안내하고 판매 페이지에 보안 경고 가능성을 명시한다.
 
 ## 7. 보안·비밀정보 관리 현황
 
