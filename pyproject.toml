@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=69.0,<70.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rentdesk-lite"
+version = "0.1.0"
+description = "RentDesk Lite - offline equipment rental management (macOS/Windows)"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary" }
+dependencies = [
+    "PySide6==6.7.3",
+    "openpyxl==3.1.5",
+    "PyNaCl==1.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.3.3",
+    "pytest-cov==5.0.0",
+    "freezegun==1.5.1",
+]
+build = [
+    "pyinstaller==6.10.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
