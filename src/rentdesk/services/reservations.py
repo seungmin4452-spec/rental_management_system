@@ -89,7 +89,7 @@ def _clean_input(data: ReservationInput) -> _Clean:
     )
 
 
-def _quote_items(
+def quote_items(
     items: Sequence[RentalItem], start_at: datetime, due_at: datetime, discount_won: int
 ) -> OrderQuote:
     return quote_order(
@@ -127,7 +127,7 @@ class ReservationService:
     def quote(self, order: RentalOrder) -> OrderQuote:
         """주문 스냅샷 기준 예상 대여료/보증금. 취소 품목은 제외."""
         items = [i for i in order.items if i.status != ItemStatus.CANCELED]
-        return _quote_items(items, order.start_at, order.due_at, order.discount_won)
+        return quote_items(items, order.start_at, order.due_at, order.discount_won)
 
     def preview_quote(
         self,
@@ -203,7 +203,7 @@ class ReservationService:
                 discount_won=clean.discount_won, notes=clean.notes, now=now,
             )
             items = repo.get_items(self._conn, order_id)
-            _quote_items(items, clean.start_at, clean.due_at, clean.discount_won)
+            quote_items(items, clean.start_at, clean.due_at, clean.discount_won)
 
             if order.status == OrderStatus.CONFIRMED:
                 self._raise_if_conflicts(
@@ -304,7 +304,7 @@ class ReservationService:
                 daily_rate_won=asset.daily_rate_won, deposit_won=asset.deposit_won,
                 late_multiplier=policy.late_multiplier, grace_minutes=policy.grace_minutes,
             )
-        _quote_items(
+        quote_items(
             repo.get_items(self._conn, order_id), order.start_at, order.due_at, order.discount_won
         )
         self._raise_if_conflicts(

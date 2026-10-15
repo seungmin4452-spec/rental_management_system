@@ -5,14 +5,17 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timedelta
 
-from rentdesk.domain.models import Asset, Customer
-from rentdesk.domain.timeutil import SEOUL, to_utc_str
+from rentdesk.domain.models import Asset, Customer, RentalOrder
+from rentdesk.domain.timeutil import SEOUL
 from rentdesk.services.assets import AssetInput, AssetService
 from rentdesk.services.availability import AvailabilityService
+from rentdesk.services.checkout import CheckoutInput, CheckoutService
 from rentdesk.services.customers import CustomerInput, CustomerService
 from rentdesk.services.maintenance import MaintenanceService
 from rentdesk.services.reservations import ReservationService
+from rentdesk.services.returns import ReturnItemInput, ReturnResult, ReturnService
 from rentdesk.services.settings import SettingsService
+from rentdesk.services.settlements import SettlementService
 
 
 def kst(month: int, day: int, hour: int = 0, minute: int = 0, second: int = 0) -> datetime:
@@ -41,6 +44,9 @@ class Services:
         self.reservations = ReservationService(conn, clock)
         self.maintenance = MaintenanceService(conn, clock)
         self.settings = SettingsService(conn, clock)
+        self.checkout_svc = CheckoutService(conn, clock)
+        self.returns = ReturnService(conn, clock)
+        self.settlements = SettlementService(conn, clock)
 
     def add_asset(self, code: str, *, rate: int = 30_000, deposit: int = 100_000,
                   category: str = "카메라", name: str = "미러리스 카메라 A") -> Asset:
@@ -60,20 +66,21 @@ class Services:
             turnaround_buffer_minutes=minutes,
         )
 
-    # M2(CheckoutService/ReturnService) 이전이므로 출고/반납 상태는 SQL로 직접 만든다.
-    def force_checkout(self, order_id: int, at: datetime) -> None:
-        self.conn.execute(
-            "UPDATE rental_orders SET status = 'IN_RENTAL', actual_checkout_at_utc = ? WHERE id = ?",
-            (to_utc_str(at), order_id),
-        )
-        self.conn.execute(
-            "UPDATE rental_items SET status = 'OUT' WHERE order_id = ? AND status = 'RESERVED'",
-            (order_id,),
+    def checkout(self, order_id: int, at: datetime, **kwargs: object) -> RentalOrder:
+        """실제 CheckoutService로 출고. 시계가 출고 시각보다 이르면 출고 시각으로 맞춘다."""
+        if self.clock.now < at:
+            self.clock.now = at
+        return self.checkout_svc.checkout(order_id, CheckoutInput(checkout_at=at, **kwargs))
+
+    def return_asset(self, order_id: int, asset_id: int, at: datetime, **kwargs: object) -> ReturnResult:
+        """실제 ReturnService로 장비 1대 반납. 시계가 반납 시각보다 이르면 반납 시각으로 맞춘다."""
+        if self.clock.now < at:
+            self.clock.now = at
+        order = self.reservations.get_order(order_id)
+        item = next(i for i in order.items if i.asset_id == asset_id)
+        return self.returns.return_items(
+            order_id, [ReturnItemInput(item_id=item.id, returned_at=at, **kwargs)]
         )
 
-    def force_return(self, order_id: int, asset_id: int, at: datetime) -> None:
-        self.conn.execute(
-            "UPDATE rental_items SET status = 'RETURNED', actual_return_at_utc = ?,"
-            " return_condition = 'GOOD' WHERE order_id = ? AND asset_id = ?",
-            (to_utc_str(at), order_id, asset_id),
-        )
+    def count(self, table: str) -> int:
+        return self.conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]

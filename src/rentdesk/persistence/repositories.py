@@ -14,12 +14,17 @@ from decimal import Decimal
 from rentdesk.domain.models import (
     Asset,
     Category,
+    ChargeKind,
+    ChargeLine,
     Customer,
     CustomerType,
     ItemStatus,
     LifecycleStatus,
     MaintenanceBlock,
+    MoneyEntry,
+    MoneyKind,
     OrderStatus,
+    PaymentMethod,
     RentalItem,
     RentalOrder,
     ReturnCondition,
@@ -334,6 +339,7 @@ def _row_to_order(row: sqlite3.Row, items: Iterable[RentalItem]) -> RentalOrder:
         created_at=parse_utc_str(row["created_at_utc"]),
         updated_at=parse_utc_str(row["updated_at_utc"]),
         items=tuple(items),
+        checkout_note=row["checkout_note"],
     )
 
 
@@ -590,6 +596,172 @@ def customer_has_orders(conn: sqlite3.Connection, customer_id: int) -> bool:
         "SELECT 1 FROM rental_orders WHERE customer_id = ? LIMIT 1", (customer_id,)
     ).fetchone()
     return row is not None
+
+
+def mark_order_checked_out(
+    conn: sqlite3.Connection,
+    order_id: int,
+    *,
+    checkout_at: datetime,
+    checkout_note: str | None,
+    now: datetime,
+) -> None:
+    conn.execute(
+        "UPDATE rental_orders SET status = 'IN_RENTAL', actual_checkout_at_utc = ?,"
+        " checkout_note = ?, updated_at_utc = ? WHERE id = ?",
+        (to_utc_str(checkout_at), checkout_note, to_utc_str(now), order_id),
+    )
+
+
+def mark_item_returned(
+    conn: sqlite3.Connection,
+    item_id: int,
+    *,
+    returned_at: datetime,
+    condition: ReturnCondition,
+    note: str | None,
+) -> None:
+    conn.execute(
+        "UPDATE rental_items SET status = 'RETURNED', actual_return_at_utc = ?,"
+        " return_condition = ?, return_note = ? WHERE id = ? AND status = 'OUT'",
+        (to_utc_str(returned_at), condition.value, note, item_id),
+    )
+
+
+def out_items_in_other_orders(
+    conn: sqlite3.Connection, asset_ids: Sequence[int], order_id: int
+) -> list[sqlite3.Row]:
+    """다른 주문에서 아직 반납되지 않은(OUT) 같은 장비."""
+    if not asset_ids:
+        return []
+    return conn.execute(
+        f"""
+        SELECT i.asset_id, a.asset_code, o.order_no
+        FROM rental_items i
+        JOIN rental_orders o ON o.id = i.order_id
+        JOIN assets a ON a.id = i.asset_id
+        WHERE i.asset_id IN ({_placeholders(len(asset_ids))})
+          AND i.status = 'OUT' AND i.order_id <> ?
+        ORDER BY a.asset_code
+        """,
+        (*asset_ids, order_id),
+    ).fetchall()
+
+
+# --------------------------------------------------------------------------- ledgers
+
+
+def _row_to_charge(row: sqlite3.Row) -> ChargeLine:
+    return ChargeLine(
+        id=row["id"],
+        order_id=row["order_id"],
+        rental_item_id=row["rental_item_id"],
+        kind=ChargeKind(row["kind"]),
+        amount_won=row["amount_won"],
+        description=row["description"],
+        created_at=parse_utc_str(row["created_at_utc"]),
+    )
+
+
+def _row_to_money(row: sqlite3.Row) -> MoneyEntry:
+    return MoneyEntry(
+        id=row["id"],
+        order_id=row["order_id"],
+        kind=MoneyKind(row["kind"]),
+        amount_won=row["amount_won"],
+        payment_method=PaymentMethod(row["payment_method"]) if row["payment_method"] else None,
+        note=row["note"],
+        created_at=parse_utc_str(row["created_at_utc"]),
+        related_entry_id=row["related_entry_id"],
+    )
+
+
+def insert_charge(
+    conn: sqlite3.Connection,
+    *,
+    order_id: int,
+    rental_item_id: int | None,
+    kind: ChargeKind,
+    amount_won: int,
+    description: str | None,
+    now: datetime,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO charge_lines (order_id, rental_item_id, kind, amount_won, description,"
+        " created_at_utc) VALUES (?, ?, ?, ?, ?, ?)",
+        (order_id, rental_item_id, kind.value, amount_won, description, to_utc_str(now)),
+    )
+    return int(cur.lastrowid)
+
+
+def list_charges(conn: sqlite3.Connection, order_id: int) -> list[ChargeLine]:
+    rows = conn.execute(
+        "SELECT * FROM charge_lines WHERE order_id = ? ORDER BY id", (order_id,)
+    )
+    return [_row_to_charge(r) for r in rows]
+
+
+def insert_money_entry(
+    conn: sqlite3.Connection,
+    *,
+    order_id: int,
+    kind: MoneyKind,
+    amount_won: int,
+    payment_method: PaymentMethod | None,
+    note: str | None,
+    related_entry_id: int | None,
+    now: datetime,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO money_entries (order_id, kind, amount_won, payment_method, note,"
+        " created_at_utc, related_entry_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (order_id, kind.value, amount_won, payment_method.value if payment_method else None,
+         note, to_utc_str(now), related_entry_id),
+    )
+    return int(cur.lastrowid)
+
+
+def get_money_entry(conn: sqlite3.Connection, entry_id: int) -> MoneyEntry | None:
+    row = conn.execute("SELECT * FROM money_entries WHERE id = ?", (entry_id,)).fetchone()
+    return _row_to_money(row) if row else None
+
+
+def list_money_entries(conn: sqlite3.Connection, order_id: int) -> list[MoneyEntry]:
+    rows = conn.execute(
+        "SELECT * FROM money_entries WHERE order_id = ? ORDER BY id", (order_id,)
+    )
+    return [_row_to_money(r) for r in rows]
+
+
+def reversed_total_for_entry(conn: sqlite3.Connection, entry_id: int) -> int:
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount_won), 0) FROM money_entries WHERE related_entry_id = ?",
+        (entry_id,),
+    ).fetchone()
+    return row[0]
+
+
+def ledger_totals_by_order(
+    conn: sqlite3.Connection, order_ids: Sequence[int]
+) -> dict[int, tuple[list[tuple[ChargeKind, int]], list[tuple[MoneyKind, int]]]]:
+    """주문별 (청구 종류별 합계, 금전 종류별 합계). 정산 판단은 도메인 함수가 한다."""
+    result: dict[int, tuple[list, list]] = {oid: ([], []) for oid in order_ids}
+    if not order_ids:
+        return result
+    marks = _placeholders(len(order_ids))
+    for r in conn.execute(
+        f"SELECT order_id, kind, SUM(amount_won) AS total FROM charge_lines"
+        f" WHERE order_id IN ({marks}) GROUP BY order_id, kind",
+        tuple(order_ids),
+    ):
+        result[r["order_id"]][0].append((ChargeKind(r["kind"]), r["total"]))
+    for r in conn.execute(
+        f"SELECT order_id, kind, SUM(amount_won) AS total FROM money_entries"
+        f" WHERE order_id IN ({marks}) GROUP BY order_id, kind",
+        tuple(order_ids),
+    ):
+        result[r["order_id"]][1].append((MoneyKind(r["kind"]), r["total"]))
+    return result
 
 
 # --------------------------------------------------------------------------- maintenance

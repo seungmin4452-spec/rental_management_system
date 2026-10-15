@@ -105,3 +105,8 @@ def late_fee(
     late_days = _ceil_div(late_seconds, SECONDS_PER_DAY) if late_seconds > 0 else 0
     fee = round_half_up(Decimal(daily_rate_won) * late_days * late_multiplier)
     return LateFee(late_seconds=late_seconds, late_days=late_days, late_fee_won=fee)
+
+
+def rental_charge_won(daily_rate_won: int, start_at: datetime, due_at: datetime) -> int:
+    """품목 1개의 약정 대여료(출고 시 `RENTAL` 청구액) = 스냅샷 일 대여료 × 약정 대여일수."""
+    return daily_rate_won * rental_days(start_at, due_at)

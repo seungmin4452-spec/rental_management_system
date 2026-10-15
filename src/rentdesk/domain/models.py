@@ -172,6 +172,7 @@ class RentalOrder:
     created_at: datetime
     updated_at: datetime
     items: tuple[RentalItem, ...] = field(default=())
+    checkout_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -183,6 +184,33 @@ class MaintenanceBlock:
     reason: str
     created_at: datetime
     closed_at: datetime | None
+
+
+@dataclass(frozen=True)
+class ChargeLine:
+    """청구 원장 1행 (PRD 7.4). 할인은 음수. 수정·삭제 없이 추가만 한다."""
+
+    id: int
+    order_id: int
+    rental_item_id: int | None
+    kind: ChargeKind
+    amount_won: int
+    description: str | None
+    created_at: datetime
+
+
+@dataclass(frozen=True)
+class MoneyEntry:
+    """금전 원장 1행 (PRD 7.4). 금액은 항상 양수이며 효과는 `kind`로 표현한다."""
+
+    id: int
+    order_id: int
+    kind: MoneyKind
+    amount_won: int
+    payment_method: PaymentMethod | None
+    note: str | None
+    created_at: datetime
+    related_entry_id: int | None
 
 
 @dataclass(frozen=True)

@@ -105,7 +105,7 @@ class TestAssets:
         order = svc.reservations.create_confirmed(
             ReservationInput(customer.id, kst(10, 20, 10), kst(10, 21, 10), [asset.id])
         )
-        svc.force_checkout(order.id, kst(10, 20, 10))
+        svc.checkout(order.id, kst(10, 20, 10))
         with pytest.raises(InvalidStateError):
             svc.assets.retire_asset(asset.id)
 

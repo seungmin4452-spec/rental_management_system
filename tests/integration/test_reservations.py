@@ -117,7 +117,7 @@ def test_t13_overdue_unreturned_blocks_new_confirmation_and_warns(svc, cam1, kim
     svc.set_buffer(0)
     out = svc.reservations.create_confirmed(_res(kim, cam1, kst(10, 19, 10), kst(10, 20, 10)))
     follow = svc.reservations.create_confirmed(_res(lee, cam1, kst(10, 22, 10), kst(10, 23, 10)))
-    svc.force_checkout(out.id, kst(10, 19, 10))
+    svc.checkout(out.id, kst(10, 19, 10))
 
     # 약정 반납 전: 후속 기간은 예약 가능
     assert svc.availability.overdue_items() == []
@@ -140,7 +140,7 @@ def test_t13_overdue_unreturned_blocks_new_confirmation_and_warns(svc, cam1, kim
     assert svc.reservations.get_order(follow.id).status == OrderStatus.CONFIRMED
 
     # 실제 반납 후에는 버퍼 이후부터 다시 예약 가능
-    svc.force_return(out.id, cam1.id, kst(10, 20, 11))
+    svc.return_asset(out.id, cam1.id, kst(10, 20, 11))
     svc.clock.now = kst(10, 20, 11, 30)
     assert svc.availability.overdue_items() == []
     ok = svc.reservations.create_confirmed(_res(lee, cam1, kst(11, 5, 10), kst(11, 6, 10)))
@@ -354,7 +354,7 @@ def test_cancel_before_checkout_frees_asset(svc, cam1, kim, lee):
 
 def test_t18_cancel_after_checkout_rejected(svc, cam1, kim):
     order = svc.reservations.create_confirmed(_res(kim, cam1, kst(10, 20, 10), kst(10, 21, 10)))
-    svc.force_checkout(order.id, kst(10, 20, 10))
+    svc.checkout(order.id, kst(10, 20, 10))
     with pytest.raises(InvalidStateError) as exc:
         svc.reservations.cancel(order.id)
     assert "출고" in exc.value.message
