@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened Runtime 예외(최소). Python ctypes/libffi가 실행 가능 메모리를 쓰는 경우를 위한 항목이다.
+  Developer ID 서명 후 실제 실행에서 필요 여부를 확인하고, 필요 없으면 제거한다(OPEN_QUESTIONS M4).
+  네트워크·카메라·파일 전체 접근 등 다른 권한은 요청하지 않는다(오프라인 앱).
+-->
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

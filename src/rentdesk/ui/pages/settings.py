@@ -1,22 +1,35 @@
-"""S-09 설정: 운영 정책, 사업자 정보, 예제 데이터 모드."""
+"""S-09 설정: 운영 정책, 사업자 정보, 백업/복원, 라이선스, 예제 데이터 모드."""
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QGroupBox,
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
+from rentdesk.domain.display import format_dt
+from rentdesk.services.backup import UNENCRYPTED_NOTICE, BackupResult, ValidatedBackup
 from rentdesk.services.settings import MAX_MINUTES
 from rentdesk.ui import feedback
+from rentdesk.ui.backup_actions import (
+    choose_backup_file,
+    confirm_restore,
+    default_backup_folder,
+    export_backup,
+    save_backup_dialog,
+)
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import FormErrors, button_row
 
@@ -24,6 +37,8 @@ from rentdesk.ui.widgets import FormErrors, button_row
 class SettingsPage(Page):
     title = "설정"
     demo_toggle_requested = Signal()
+    restore_requested = Signal(object)  # ValidatedBackup — 앱 컨트롤러가 연결 교체를 처리
+    backup_created = Signal()
 
     def __init__(self, ctx, nav, parent: QWidget | None = None) -> None:
         super().__init__(ctx, nav, parent)
@@ -60,6 +75,40 @@ class SettingsPage(Page):
         save_biz.clicked.connect(self.save_business)
         bf.addRow(button_row(save_biz))
 
+        backup_box = QGroupBox("데이터 백업·복원")
+        bl = QVBoxLayout(backup_box)
+        notice = QLabel(
+            f"{UNENCRYPTED_NOTICE} 다른 PC나 운영체제(Mac ↔ Windows)로 옮길 때도 이 백업 파일을 복원합니다. "
+            "라이선스 파일은 백업에 포함되지 않습니다."
+        )
+        notice.setWordWrap(True)
+        notice.setStyleSheet("color: #666;")
+        self.last_backup_label = QLabel()
+        self.backup_dir_label = QLabel()
+        self.backup_dir_label.setWordWrap(True)
+        bform = QFormLayout()
+        bform.addRow("마지막 백업", self.last_backup_label)
+        bform.addRow("기본 백업 폴더", self.backup_dir_label)
+        self.backup_dir_btn = QPushButton("기본 폴더 변경…")
+        self.backup_dir_btn.clicked.connect(self.choose_backup_dir)
+        self.backup_btn = QPushButton("백업 파일 만들기…")
+        self.backup_btn.clicked.connect(self.backup_dialog)
+        self.restore_btn = QPushButton("백업에서 복원…")
+        self.restore_btn.clicked.connect(self.restore_dialog)
+        bl.addWidget(notice)
+        bl.addLayout(bform)
+        bl.addLayout(button_row(self.backup_dir_btn, self.backup_btn, self.restore_btn))
+
+        self.license_panel = None
+        license_box = None
+        if self.ctx.license is not None:
+            from rentdesk.ui.dialogs.license_dialog import LicensePanel
+
+            license_box = QGroupBox("라이선스")
+            ll = QVBoxLayout(license_box)
+            self.license_panel = LicensePanel(self.ctx.license, license_box)
+            ll.addWidget(self.license_panel)
+
         demo_box = QGroupBox("예제 데이터 모드")
         dl = QVBoxLayout(demo_box)
         self.demo_label = QLabel()
@@ -69,11 +118,21 @@ class SettingsPage(Page):
         dl.addWidget(self.demo_label)
         dl.addLayout(button_row(self.demo_btn))
 
-        lay = QVBoxLayout(self)
+        body = QWidget()
+        lay = QVBoxLayout(body)
         lay.addWidget(policy_box)
         lay.addWidget(biz_box)
+        lay.addWidget(backup_box)
+        if license_box is not None:
+            lay.addWidget(license_box)
         lay.addWidget(demo_box)
         lay.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(body)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(scroll)
         self.refresh()
 
     def refresh(self) -> None:
@@ -84,6 +143,9 @@ class SettingsPage(Page):
         b = self.ctx.settings.get_business_info()
         self.biz_name.setText(b.name)
         self.biz_phone.setText(b.phone)
+        self._refresh_backup()
+        if self.license_panel is not None:
+            self.license_panel.refresh()
         if self.ctx.is_demo:
             self.demo_label.setText(
                 "지금은 예제 데이터 모드입니다. 여기서 입력한 내용은 실제 데이터에 저장되지 않으며 "
@@ -123,3 +185,60 @@ class SettingsPage(Page):
             return False
         feedback.info(self, "사업자 정보를 저장했습니다.")
         return True
+
+    # ------------------------------------------------------------------ 백업/복원
+
+    def _refresh_backup(self) -> None:
+        demo = self.ctx.is_demo
+        for btn in (self.backup_btn, self.restore_btn, self.backup_dir_btn):
+            btn.setEnabled(not demo)
+        if demo:
+            self.last_backup_label.setText("예제 데이터 모드에서는 백업·복원을 사용할 수 없습니다.")
+        else:
+            self.last_backup_label.setText(format_dt(self.ctx.backup.last_backup_at(), "아직 없음"))
+        self.backup_dir_label.setText(str(default_backup_folder(self.ctx.preferences)))
+
+    def choose_backup_dir(self) -> None:
+        if self.ctx.preferences is None:
+            return
+        path = QFileDialog.getExistingDirectory(
+            self, "기본 백업 폴더 선택", str(default_backup_folder(self.ctx.preferences))
+        )
+        if path:
+            self.set_backup_dir(Path(path))
+
+    def set_backup_dir(self, path: Path) -> None:
+        if self.ctx.preferences is None:
+            return
+        feedback.run(self, lambda: self.ctx.preferences.set_backup_dir(path))
+        self._refresh_backup()
+
+    def backup_dialog(self) -> BackupResult | None:
+        result = save_backup_dialog(self, self.ctx.backup, self.ctx.preferences)
+        self._after_backup(result)
+        return result
+
+    def backup_to(self, path: Path, *, overwrite: bool = False) -> BackupResult | None:
+        """테스트·자동화용: 대화상자 없이 지정 경로에 백업."""
+        result = export_backup(self, self.ctx.backup, path, overwrite=overwrite)
+        self._after_backup(result)
+        return result
+
+    def _after_backup(self, result: BackupResult | None) -> None:
+        if result is not None:
+            self._refresh_backup()
+            self.backup_created.emit()
+
+    def restore_dialog(self) -> None:
+        path = choose_backup_file(self, self.ctx.preferences)
+        if path is not None:
+            self.restore_from(path)
+
+    def restore_from(self, path: Path) -> ValidatedBackup | None:
+        if self.ctx.is_demo:
+            feedback.warn(self, "예제 데이터 모드에서는 복원할 수 없습니다. 실제 데이터로 돌아간 뒤 복원해주세요.")
+            return None
+        validated = confirm_restore(self, path)
+        if validated is not None:
+            self.restore_requested.emit(validated)
+        return validated

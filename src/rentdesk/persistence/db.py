@@ -27,6 +27,31 @@ class DatabaseError(RuntimeError):
     """DB 열기/마이그레이션 실패. 사용자에게 보여줄 한국어 메시지를 담는다."""
 
 
+class DatabaseIntegrityError(DatabaseError):
+    """데이터 파일 손상(무결성 검사 실패). 앱은 백업 복원 안내를 보여준다(PRD 10.3, T-25)."""
+
+
+INTEGRITY_MESSAGE = (
+    "데이터 파일이 손상되어 열 수 없습니다. 기존 파일은 삭제하지 않았습니다.\n"
+    "백업 파일에서 복원하거나 판매자에게 문의해주세요."
+)
+
+
+def integrity_problems(conn: sqlite3.Connection) -> list[str]:
+    """`PRAGMA integrity_check` + `foreign_key_check` 결과. 문제가 없으면 빈 목록.
+
+    SQLite 파일이 아닌 경우처럼 검사 자체가 실패해도 문제로 보고한다.
+    """
+    try:
+        rows = [r[0] for r in conn.execute("PRAGMA integrity_check").fetchall()]
+        problems = [] if rows == ["ok"] else rows
+        if conn.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            problems.append("foreign key violation")
+    except sqlite3.DatabaseError as exc:
+        return [f"sqlite error: {exc.__class__.__name__}"]
+    return problems
+
+
 def connect(path: Path | str) -> sqlite3.Connection:
     """FK가 활성화된 SQLite 연결. `":memory:"`도 허용(테스트용)."""
     conn = sqlite3.connect(
@@ -157,13 +182,18 @@ def apply_migrations(
 
 
 def open_database(path: Path | str, *, pre_migration_backup: Path | None = None) -> sqlite3.Connection:
-    """연결 + 마이그레이션 + 무결성 기본 확인."""
+    """연결 + 무결성 검사 + 마이그레이션.
+
+    비정상 종료 뒤 재실행(T-25)에도 같은 경로를 탄다. SQLite가 남은 롤백 저널을 먼저 처리한 뒤
+    `integrity_check`로 파일 상태를 확인하고, 손상된 파일에는 마이그레이션을 적용하지 않는다.
+    """
     conn = connect(path)
     try:
+        if integrity_problems(conn):
+            raise DatabaseIntegrityError(INTEGRITY_MESSAGE)
         apply_migrations(conn, pre_migration_backup=pre_migration_backup)
-        fk_violations = conn.execute("PRAGMA foreign_key_check").fetchall()
-        if fk_violations:
-            raise DatabaseError("데이터베이스의 관계 무결성 검사에 실패했습니다.")
+        if integrity_problems(conn):
+            raise DatabaseIntegrityError(INTEGRITY_MESSAGE)
     except BaseException:
         conn.close()
         raise

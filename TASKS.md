@@ -38,16 +38,16 @@
 - [ ] macOS Retina와 Windows DPI(100/150%), 한글 경로·UI 단축키·파일 선택창 점검 — 한글 경로는 자동 테스트 통과, 나머지는 실기기 수동 점검 필요
 
 ## M4. 백업 / 라이선스 / macOS + Windows 패키징
-- [ ] 온라인 백업 API 기반 백업·복원·무결성 검사
-- [ ] 백업 파일 손상 시 기존 DB 보존 검증
-- [ ] Ed25519 라이선스 생성·검증·판매자 개인키 분리
-- [ ] Mac/Windows 사용자 데이터 경로·로그 보호 및 QStandardPaths 테스트
-- [ ] macOS Apple Silicon `.app` + `.dmg` 빌드 스크립트
-- [ ] macOS Developer ID 코드서명 / Hardened Runtime / 공증·검증 단계 구현(배포용)
-- [ ] Windows용 PyInstaller one-dir 및 Inno Setup 설치 도구 스크립트, **Windows에서 빌드**
+- [x] 온라인 백업 API 기반 백업·복원·무결성 검사 (macOS arm64 로컬 확인. Windows 검증은 전체 완료 후 일괄)
+- [x] 백업 파일 손상 시 기존 DB 보존 검증 (손상 유형 12종 자동 테스트)
+- [x] Ed25519 라이선스 생성·검증·판매자 개인키 분리 (`scripts/generate_license.py`, 키는 저장소 밖)
+- [x] Mac/Windows 사용자 데이터 경로·로그 보호 및 QStandardPaths 테스트 (macOS 로컬 확인, Windows는 CI/실기기 일괄 검증 예정)
+- [x] macOS Apple Silicon `.app` + `.dmg` 빌드 스크립트 (로컬 맥북에서 실제 빌드·자기 점검 통과, ad-hoc 서명)
+- [ ] macOS Developer ID 코드서명 / Hardened Runtime / 공증·검증 단계 구현(배포용) — 스크립트 작성 완료, **Developer ID 인증서가 없어 실행 미검증**
+- [ ] Windows용 PyInstaller one-dir 및 Inno Setup 설치 도구 스크립트, **Windows에서 빌드** — 스크립트·CI 잡 작성 완료, **Windows 빌드 미실행**
 - [ ] Python 미설치 macOS/Windows에서 각각 설치/실행/제거 검증
-- [ ] Mac ↔ Windows 백업/복원 호환 및 OS별 라이선스 이전 절차 검증
-- [ ] T-19~T-22, T-25, CP-01~CP-10 통과
+- [ ] Mac ↔ Windows 백업/복원 호환 및 OS별 라이선스 이전 절차 검증 — 포맷·이전 절차 자동 테스트/문서 완료, 실제 양 OS 왕복 미검증
+- [ ] T-19~T-22, T-25, CP-01~CP-10 통과 — T-19~T-22, T-25, CP-01은 macOS arm64 로컬 통과. CP-02~CP-10 미검증
 
 ## M5. 출시
 - [ ] 500장비/3000고객/10000예약 규모 테스트

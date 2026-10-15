@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rentdesk-lite"
-version = "0.1.0"
+dynamic = ["version"]
 description = "RentDesk Lite - offline equipment rental management (macOS/Windows)"
 requires-python = ">=3.12,<3.13"
 license = { text = "Proprietary" }
@@ -25,6 +25,9 @@ dev = [
 build = [
     "pyinstaller==6.10.0",
 ]
+
+[tool.setuptools.dynamic]
+version = { attr = "rentdesk.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

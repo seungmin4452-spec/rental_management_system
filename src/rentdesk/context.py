@@ -6,12 +6,15 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from rentdesk.platform.preferences import LocalPreferences
 from rentdesk.services.assets import AssetService
 from rentdesk.services.availability import AvailabilityService
+from rentdesk.services.backup import BackupService
 from rentdesk.services.checkout import CheckoutService
 from rentdesk.services.common import Clock, current_time, default_clock
 from rentdesk.services.customers import CustomerService
 from rentdesk.services.dashboard import DashboardService
+from rentdesk.services.licensing import LicenseService
 from rentdesk.services.maintenance import MaintenanceService
 from rentdesk.services.reports import ReportService
 from rentdesk.services.reservations import ReservationService
@@ -26,6 +29,8 @@ class AppContext:
     conn: sqlite3.Connection
     clock: Clock = default_clock
     is_demo: bool = False
+    license: LicenseService | None = None  # 앱 실행 시에만 주입(DB와 무관한 기기 단위 정보)
+    preferences: LocalPreferences | None = None
     assets: AssetService = field(init=False)
     customers: CustomerService = field(init=False)
     availability: AvailabilityService = field(init=False)
@@ -38,6 +43,7 @@ class AppContext:
     dashboard: DashboardService = field(init=False)
     reports: ReportService = field(init=False)
     search: SearchService = field(init=False)
+    backup: BackupService = field(init=False)
 
     def __post_init__(self) -> None:
         c, k = self.conn, self.clock
@@ -53,6 +59,7 @@ class AppContext:
         self.dashboard = DashboardService(c, k)
         self.reports = ReportService(c, k)
         self.search = SearchService(c)
+        self.backup = BackupService(c, k)
 
     def now(self) -> datetime:
         return current_time(self.clock)

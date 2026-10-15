@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   test:
@@ -28,3 +29,46 @@ jobs:
         env:
           QT_QPA_PLATFORM: offscreen
         run: python -m pytest -q
+
+  # 각 OS에서 네이티브 패키징(크로스컴파일 없음). 서명·공증은 하지 않는 개발용 산출물이다.
+  # CI 빌드 성공은 실기기 설치 검증(CP-03/CP-04)을 대체하지 않는다.
+  package-macos:
+    needs: test
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build .app/.dmg (ad-hoc signed)
+        env:
+          PYTHON: python
+          SKIP_TESTS: "1"
+        run: scripts/build_macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RentDeskLite-macos-arm64-unsigned
+          path: dist/*.dmg
+          retention-days: 14
+
+  package-windows:
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Build setup.exe (unsigned)
+        shell: pwsh
+        env:
+          PYTHON: python
+          SKIP_TESTS: "1"
+        run: ./scripts/build_windows.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RentDeskLite-win-x64-unsigned
+          path: dist/*_setup.exe
+          retention-days: 14

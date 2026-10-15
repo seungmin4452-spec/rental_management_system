@@ -81,7 +81,40 @@ PRD.md 17.6 지침에 따라 문서에 없는 사항을 임의 구현하지 않�
 | 백업/복원 UI | M3 설정 화면에 넣지 않음 → M4(BackupService와 함께) | TASKS M4 |
 | 앱 데이터 실제 경로 | Qt `AppLocalDataLocation`이 macOS에서 `…/Application Support/RentDeskLite/RentDeskLite/`(조직명/앱명)로 나옴. 변경하지 않고 M4 경로 점검 시 확정 | PRD 10.1 "반환값은 조직·앱 이름 설정에 따라 달라질 수 있음". 출시 전 고객 데이터가 없으므로 M4에서 바꿔도 이전 부담 없음 |
 
+## M4
+
+| 항목 | 결정 | 이유 |
+|---|---|---|
+| 앱 데이터 경로 중복(M3 이월) | Qt 조직명을 **빈 값**으로 두고 앱 이름만 `RentDeskLite` → macOS `~/Library/Application Support/RentDeskLite/`, Windows `%LOCALAPPDATA%\RentDeskLite\` | PRD 0.9/10.1 목표 경로와 일치. 출시 전이라 이전 대상 고객 데이터 없음. 개발 중 생긴 옛 폴더(`…/RentDeskLite/RentDeskLite/`)는 자동 이전하지 않음 |
+| 앱 데이터 폴더 권한 | macOS(POSIX)에서 실행 시 `chmod 700` | 같은 Mac의 다른 계정이 고객 정보·로그를 읽지 못하게. Windows는 `%LOCALAPPDATA%` 사용자 ACL에 맡김 |
+| 백업 파일 형식 | ZIP(`manifest.json` + `rentdesk.db`), `backup_format_version=1`, 확장자 `.zip` | CROSS_PLATFORM F. 고객이 파일 종류를 알아보기 쉬움 |
+| manifest 추가 항목 | `app_version`, `size_bytes`, `source_os`(참고용), `summary`(표별 건수·청구 합계·금전 종류별 합계) | T-19 "건수·핵심 합계 일치"를 복원 전에 대조. `source_os`는 판정에 쓰지 않음 |
+| 백업 안의 기기 경로 | 스냅샷에서 `app_settings.default_backup_dir`를 null로 지움. **기본 백업 폴더는 DB가 아닌 `<앱 데이터>/preferences.json`**에 저장 | 절대경로가 다른 OS로 넘어가지 않도록(CROSS_PLATFORM F). 폴더가 사라지면(USB 분리) 문서 폴더로 대체 |
+| 복원 검증 순서 | ZIP 구조(정확히 2개 파일, 경로 조작 불가) → manifest(제품·포맷·스키마 버전) → 크기 → SHA-256 → `integrity_check`+`foreign_key_check` → 스키마 버전 → 건수·합계 대조 | 어느 단계든 실패하면 현재 DB 파일을 건드리지 않음(T-20) |
+| 더 오래된 스키마 백업 | 허용. 복원 후 정상 마이그레이션(마이그레이션 전 보호 백업 포함) | 구버전 고객 백업을 새 버전에서 복원 |
+| 복원 시 "앱 재시작" | 프로세스를 다시 띄우지 않고 **DB 연결과 메인 창을 새로 만듦**(화면 전체 재시작) | 단일 인스턴스 잠금·OS별 재실행 차이를 피함. 서비스는 모두 새 연결로 다시 생성됨 |
+| 복원 보호 백업 | 교체 직전 현재 DB를 같은 ZIP 형식 `backups/pre_restore_<서울시각>.zip`으로 저장(복원 화면에서 그대로 되돌릴 수 있음). 교체 후 열기 실패 시 원래 파일 자동 복귀 | PRD 10.2/S-09 |
+| 비정상 종료 후 남은 저널 | 교체 시 기존 DB의 `-journal/-wal/-shm`을 기존 파일과 함께 옮김 | 크래시 후 SQLite가 무효화한 cold 저널이 남는 것을 확인(T-25 테스트). 짝이 어긋나 새 DB에 적용되는 것 방지 |
+| 시작 시 무결성 검사 | 매 실행 `PRAGMA integrity_check`(마이그레이션 전·후). 손상이면 마이그레이션하지 않고 "백업에서 복원/종료" 선택. 복원 시 손상 파일은 `backups/corrupt_*.db`로 보관 | PRD 10.3, T-25. 10,000건 규모에서도 수십 ms 수준(M5 대용량 테스트에서 재확인) |
+| 백업 권장 안내 | 실제 데이터 모드에서 백업 이력이 없거나 7일 이상 지나면 메인 창 상단 안내 + [백업하러 가기]. 종료 시 대화상자는 띄우지 않음 | PRD 10.2 "최초 실행 시 권고, 주기 백업 권장". 자동 백업은 P1 |
+| 예제 모드의 백업/복원 | 비활성화 | 예제 DB를 실제 데이터로 착각해 복원/백업하는 혼동 방지 |
+| 기기 코드 | OS 어댑터의 기기 해시를 `RentDeskLite:machine:v1:` 접두어와 다시 SHA-256 → base32 20자(`XXXX-XXXX-XXXX-XXXX-XXXX`, 100비트) | 받아 적기 쉽고 원본 식별자 역산 불가(PRD 11.1) |
+| 라이선스 파일 | JSON `{license: {...}, signature}`; 서명 대상은 키 정렬·공백 없는 UTF-8 JSON. 필드: format_version, license_id, product, edition(`standard`), customer_label, machine_code, issued_at_utc, expires_at_utc(null=무기한) | PRD 11.1 예시 필드. `machine_hash` 대신 사람이 읽는 `machine_code` 이름 사용 |
+| 라이선스 실패 시 동작 | 시작 화면에서 이유·기기 코드 표시, [라이선스 파일 불러오기]/[예제 데이터로 체험]/[실제 데이터 백업…]/[종료]. 실제 DB는 열기·무결성 검사만 하고 변경하지 않음 | PRD 11.1 "데모 사용만 허용, 실데이터 삭제·잠금 금지". 백업 내보내기는 PC 이전·라이선스 분실 시 데이터 접근을 보장하기 위해 허용 |
+| 개발용 우회 | 환경변수 등 라이선스 우회 수단을 두지 않음. 개발 PC도 발급 스크립트로 라이선스 발급 | 고객이 같은 우회를 쓸 수 있으므로 |
+| 서명 키 보관 | `~/RentDeskSellerKeys/signing_key.json`(권한 600, 저장소 밖). 스크립트는 저장소 안 경로를 거부 | PRD 11.1, CLAUDE.md 비밀정보 규칙 |
+| 패키징 자기 점검 | `RentDeskLite --self-check <결과.json>`: 임시 폴더에서 Qt 창·SQLite·마이그레이션·예제 데이터·백업 검증·내장 공개키를 확인. 사용자 데이터·잠금·라이선스 파일을 건드리지 않음 | CI/설치 후 스모크 테스트(Windows windowed exe는 콘솔 출력이 없어 파일로 결과 기록) |
+| PyInstaller | onedir, UPX 미사용, `_cffi_backend` hidden import(PyNaCl), 쓰지 않는 Qt 모듈 제외 | macOS 실제 빌드 스모크에서 `_cffi_backend` 누락 확인 후 추가 |
+| macOS 서명 방식 | 내부 Mach-O → 프레임워크 → 앱 순서로 서명(`--deep` 미사용), Hardened Runtime + timestamp. 인증서 없으면 ad-hoc(개발용) | Apple 권장 방식. entitlements는 `allow-unsigned-executable-memory` 1개로 시작, Developer ID 서명 실행 시 필요 여부 재확인 |
+| 번들 ID | `com.example.rentdesklite`(임시, `RENTDESK_BUNDLE_ID`로 변경) | 출시 전 판매자 도메인 기반으로 확정 필요 |
+| Windows 설치 | Inno Setup 6, 기본 사용자 단위 설치(`PrivilegesRequired=lowest`, 선택 시 전체 사용자), `MinVersion=10.0.22000`(Windows 11), x64 전용, 제거 시 `%LOCALAPPDATA%\RentDeskLite` 보존 안내 | P0 대상이 Windows 11 x64. Windows 10은 검증 후 MinVersion 완화 |
+| CI 패키징 | `package-macos`(ad-hoc DMG), `package-windows`(미서명 setup.exe) 잡 추가, 산출물 14일 보관 | CI 빌드 성공은 실기기 설치 검증(CP-03/04)을 대체하지 않음 |
+| 앱 아이콘(.icns/.ico) | **미제작**. `RENTDESK_ICON`으로 넣을 수 있게만 함 | 브랜드 이미지가 아직 없음 → 사용자 확인 필요 |
+
 ## 다음 확인 필요
 
 - Windows 네이티브 빌드/실기기 검증을 GitHub Actions만으로 끝낼지, 추가로 실제 Windows PC/VM에서 설치형 테스트를 할지는 M4 착수 시 재확인.
-- macOS 서명/공증용 Apple Developer 계정 보유 여부는 M4 착수 전 사용자에게 확인 필요.
+- macOS 서명/공증용 Apple Developer 계정(Developer ID Application 인증서, 연 99달러) 보유 여부 — 서명·공증 스크립트는 준비됨, 실행에 필요.
+- 정식 번들 ID(`com.<도메인>.rentdesklite`), 앱 아이콘 원본 이미지.
+- Windows Authenticode 코드 서명 인증서 구매 여부(미서명 시 SmartScreen 경고).
+- 사용권 이전 재발급 횟수 등 라이선스 약관(`docs/license_operations.md` 가설).

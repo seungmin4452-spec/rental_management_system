@@ -84,6 +84,7 @@ class SearchResultsDialog(QDialog):
 
 class MainWindow(QMainWindow):
     demo_toggle_requested = Signal()
+    restore_requested = Signal(object)  # ValidatedBackup
 
     def __init__(self, ctx: AppContext) -> None:
         super().__init__()
@@ -100,6 +101,19 @@ class MainWindow(QMainWindow):
             banner = QLabel("예제 데이터 모드 — 실제 데이터가 아닙니다. 입력 내용은 실제 데이터에 저장되지 않습니다.")
             banner.setStyleSheet("background: #fff3cd; color: #664d03; padding: 6px;")
             outer.addWidget(banner)
+
+        # 백업 권장 안내(PRD 10.2): 첫 실행·7일 이상 백업하지 않은 경우
+        self.backup_banner = QWidget()
+        bb = QHBoxLayout(self.backup_banner)
+        bb.setContentsMargins(6, 4, 6, 4)
+        self.backup_banner_label = QLabel()
+        self.backup_banner_label.setWordWrap(True)
+        backup_now = QPushButton("백업하러 가기")
+        backup_now.clicked.connect(lambda: self.goto("settings"))
+        bb.addWidget(self.backup_banner_label, 1)
+        bb.addWidget(backup_now)
+        self.backup_banner.setStyleSheet("background: #e7f1ff; color: #084298;")
+        outer.addWidget(self.backup_banner)
 
         top = QHBoxLayout()
         top.addWidget(QLabel(f"<b>{WINDOW_TITLE}</b>"))
@@ -123,13 +137,17 @@ class MainWindow(QMainWindow):
             page = cls(ctx, self)
             self.page_by_key[key] = page
             self.pages.addWidget(page)
-        self.page_by_key["settings"].demo_toggle_requested.connect(self.demo_toggle_requested.emit)
+        settings = self.page_by_key["settings"]
+        settings.demo_toggle_requested.connect(self.demo_toggle_requested.emit)
+        settings.restore_requested.connect(self.restore_requested.emit)
+        settings.backup_created.connect(self.update_backup_banner)
         self.menu_list.currentRowChanged.connect(self._on_menu)
         body.addWidget(self.menu_list)
         body.addWidget(self.pages, 1)
         outer.addLayout(body, 1)
         self.setCentralWidget(central)
         self._install_shortcuts()
+        self.update_backup_banner()
         self.menu_list.setCurrentRow(0)
 
     def _install_shortcuts(self) -> None:
@@ -165,6 +183,11 @@ class MainWindow(QMainWindow):
 
     def data_changed(self) -> None:
         self.refresh_current()
+
+    def update_backup_banner(self) -> None:
+        text = None if self.ctx.is_demo else feedback.run(self, self.ctx.backup.reminder)
+        self.backup_banner_label.setText(text or "")
+        self.backup_banner.setVisible(bool(text))
 
     def goto(self, page: str, **filters: object) -> None:
         keys = [k for k, _, _ in PAGES]
