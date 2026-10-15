@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -23,7 +24,7 @@ from PySide6.QtWidgets import (
 
 from rentdesk.context import AppContext
 from rentdesk.services.search import RESULT_KIND_LABELS, ResultKind, SearchResult
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.pages.assets import AssetsPage
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.pages.customers import CustomersPage
@@ -68,7 +69,7 @@ class SearchResultsDialog(QDialog):
             item.setData(Qt.ItemDataRole.UserRole, r)
             self.list.addItem(item)
         self.list.itemActivated.connect(self._choose)
-        open_btn = QPushButton("열기")
+        open_btn = theme.set_variant(QPushButton("열기"), "primary")
         open_btn.clicked.connect(lambda: self._choose(self.list.currentItem()))
         lay = QVBoxLayout(self)
         lay.addWidget(self.list)
@@ -95,46 +96,65 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
 
         central = QWidget(self)
-        outer = QVBoxLayout(central)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+        root.addWidget(self._build_sidebar())
+
+        content = QWidget(central)
+        content.setObjectName("Content")
+        content.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        outer = QVBoxLayout(content)
+        outer.setContentsMargins(28, 20, 28, 20)
+        outer.setSpacing(14)
 
         if ctx.is_demo:
-            banner = QLabel("예제 데이터 모드 — 실제 데이터가 아닙니다. 입력 내용은 실제 데이터에 저장되지 않습니다.")
-            banner.setStyleSheet("background: #fff3cd; color: #664d03; padding: 6px;")
+            banner = QFrame()
+            banner.setProperty("banner", "warning")
+            bl = QHBoxLayout(banner)
+            bl.setContentsMargins(14, 10, 14, 10)
+            bl.addWidget(QLabel(
+                "예제 데이터 모드 — 실제 데이터가 아닙니다. 입력 내용은 실제 데이터에 저장되지 않습니다."
+            ))
             outer.addWidget(banner)
 
         # 백업 권장 안내(PRD 10.2): 첫 실행·7일 이상 백업하지 않은 경우
-        self.backup_banner = QWidget()
+        self.backup_banner = QFrame()
+        self.backup_banner.setProperty("banner", "info")
         bb = QHBoxLayout(self.backup_banner)
-        bb.setContentsMargins(6, 4, 6, 4)
+        bb.setContentsMargins(14, 8, 10, 8)
         self.backup_banner_label = QLabel()
         self.backup_banner_label.setWordWrap(True)
         backup_now = QPushButton("백업하러 가기")
         backup_now.clicked.connect(lambda: self.goto("settings"))
         bb.addWidget(self.backup_banner_label, 1)
         bb.addWidget(backup_now)
-        self.backup_banner.setStyleSheet("background: #e7f1ff; color: #084298;")
         outer.addWidget(self.backup_banner)
 
         top = QHBoxLayout()
-        top.addWidget(QLabel(f"<b>{WINDOW_TITLE}</b>"))
+        top.setSpacing(12)
+        self.page_title = QLabel()
+        self.page_title.setObjectName("PageTitle")
+        top.addWidget(self.page_title)
         top.addStretch(1)
         self.search_box = QLineEdit()
-        self.search_box.setPlaceholderText("장비번호·고객명·예약번호 검색 후 Enter")
+        self.search_box.setObjectName("SearchBox")
+        self.search_box.setPlaceholderText("장비번호 · 고객명 · 예약번호 검색 후 Enter")
         self.search_box.setClearButtonEnabled(True)
-        self.search_box.setMinimumWidth(320)
+        self.search_box.setMinimumWidth(340)
+        self._search_icon = self.search_box.addAction(
+            theme.icon("search", "text_muted", size=18), QLineEdit.ActionPosition.LeadingPosition
+        )
         self.search_box.returnPressed.connect(self.run_search)
         top.addWidget(self.search_box)
         outer.addLayout(top)
 
-        body = QHBoxLayout()
-        self.menu_list = QListWidget(central)
-        self.menu_list.addItems(MENU_ITEMS)
-        self.menu_list.setMaximumWidth(200)
-        self.menu_list.setSpacing(3)
-        self.pages = QStackedWidget(central)
+        self.pages = QStackedWidget(content)
         self.page_by_key: dict[str, Page] = {}
         for key, _label, cls in PAGES:
             page = cls(ctx, self)
+            if page.layout() is not None:
+                page.layout().setContentsMargins(0, 4, 0, 0)
             self.page_by_key[key] = page
             self.pages.addWidget(page)
         settings = self.page_by_key["settings"]
@@ -142,13 +162,84 @@ class MainWindow(QMainWindow):
         settings.restore_requested.connect(self.restore_requested.emit)
         settings.backup_created.connect(self.update_backup_banner)
         self.menu_list.currentRowChanged.connect(self._on_menu)
-        body.addWidget(self.menu_list)
-        body.addWidget(self.pages, 1)
-        outer.addLayout(body, 1)
+        outer.addWidget(self.pages, 1)
+        root.addWidget(content, 1)
         self.setCentralWidget(central)
         self._install_shortcuts()
         self.update_backup_banner()
         self.menu_list.setCurrentRow(0)
+
+    def _build_sidebar(self) -> QFrame:
+        side = QFrame()
+        side.setObjectName("Sidebar")
+        side.setFixedWidth(220)
+        lay = QVBoxLayout(side)
+        lay.setContentsMargins(12, 20, 12, 16)
+        lay.setSpacing(4)
+
+        brand = QHBoxLayout()
+        brand.setContentsMargins(10, 0, 0, 16)
+        brand.setSpacing(10)
+        self.brand_mark = QLabel()
+        self.brand_mark.setObjectName("BrandMark")
+        self.brand_mark.setFixedSize(32, 32)
+        self.brand_mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        name = QLabel(WINDOW_TITLE)
+        name.setObjectName("BrandName")
+        brand.addWidget(self.brand_mark)
+        brand.addWidget(name)
+        brand.addStretch(1)
+        lay.addLayout(brand)
+
+        self.menu_list = QListWidget(side)
+        self.menu_list.setObjectName("SideNav")
+        self.menu_list.setIconSize(QSize(20, 20))
+        self.menu_list.setSpacing(2)
+        self.menu_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        for _key, label, _cls in PAGES:
+            self.menu_list.addItem(QListWidgetItem(label))
+        lay.addWidget(self.menu_list, 1)
+
+        self.sidebar_footer = QFrame()
+        self.sidebar_footer.setObjectName("SidebarFooter")
+        fl = QVBoxLayout(self.sidebar_footer)
+        fl.setContentsMargins(12, 10, 12, 10)
+        fl.setSpacing(0)
+        caption = QLabel("데이터" if self.ctx.is_demo else "사용권")
+        theme.set_tone(caption, "muted")
+        self.sidebar_status = QLabel()
+        fl.addWidget(caption)
+        fl.addWidget(self.sidebar_status)
+        lay.addWidget(self.sidebar_footer)
+        self._update_sidebar_status()
+        self._apply_icons()
+        return side
+
+    def _update_sidebar_status(self) -> None:
+        if self.ctx.is_demo:
+            self.sidebar_status.setText("예제 데이터 모드")
+            theme.set_tone(self.sidebar_status, "warning")
+            return
+        if self.ctx.license is not None and self.ctx.license.check().valid:
+            self.sidebar_status.setText("정품 · 이 PC 1대")
+            theme.set_tone(self.sidebar_status, "success")
+            return
+        self.sidebar_footer.hide()
+
+    def _apply_icons(self) -> None:
+        """테마(라이트/다크)가 바뀌면 아이콘 색도 다시 만든다."""
+        self.brand_mark.setPixmap(theme.icon_pixmap("brand", size=18, stroke=theme.current().on_accent))
+        for row, (key, _label, _cls) in enumerate(PAGES):
+            self.menu_list.item(row).setIcon(
+                theme.icon(key, "text_sub", selected_tone="accent_text")
+            )
+        if hasattr(self, "_search_icon"):
+            self._search_icon.setIcon(theme.icon("search", "text_muted", size=18))
+
+    def changeEvent(self, event) -> None:  # noqa: N802 - Qt API
+        if event.type() == QEvent.Type.PaletteChange:
+            self._apply_icons()
+        super().changeEvent(event)
 
     def _install_shortcuts(self) -> None:
         find = QAction("검색", self)
@@ -176,6 +267,7 @@ class MainWindow(QMainWindow):
 
     def _on_menu(self, row: int) -> None:
         self.pages.setCurrentIndex(row)
+        self.page_title.setText(PAGES[row][1])
         self.refresh_current()
 
     def refresh_current(self) -> None:

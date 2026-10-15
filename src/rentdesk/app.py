@@ -46,6 +46,7 @@ from rentdesk.ui import feedback
 from rentdesk.ui.backup_actions import choose_backup_file, confirm_restore, save_backup_dialog
 from rentdesk.ui.dialogs.license_dialog import GateChoice, LicenseDialog
 from rentdesk.ui.main_window import MainWindow
+from rentdesk.ui.theme import apply_theme, icon_pixmap
 
 log = logging.getLogger("rentdesk")
 
@@ -298,6 +299,9 @@ def run_self_check(output: Path) -> int:
             conn = create_demo_database(Path(work) / "selfcheck.db")
             try:
                 checks["schema_version"] = latest_schema_version()
+                apply_theme(app, dark=False)
+                # 테마 아이콘(QtSvg)이 번들에 포함됐는지: SVG 렌더 결과가 비어 있지 않아야 한다
+                checks["theme_icon_rendered"] = not icon_pixmap("dashboard").toImage().isNull()
                 window = MainWindow(AppContext(conn, is_demo=True))
                 window.show()
                 app.processEvents()
@@ -314,7 +318,8 @@ def run_self_check(output: Path) -> int:
         bogus = verify_license("{}", public_key=VerifyKey(bytes.fromhex(PUBLIC_KEY_HEX)),
                                machine_code="A" * 20, now=now_utc())
         checks["license_rejects_malformed"] = bogus.status == LicenseStatus.MALFORMED
-        ok = bool(checks["license_rejects_malformed"] and checks["icon_loaded"])
+        ok = bool(checks["license_rejects_malformed"] and checks["icon_loaded"]
+                  and checks["theme_icon_rendered"])
     except Exception as exc:  # noqa: BLE001 - 결과 파일에 실패 이유를 남긴다
         checks["error"] = f"{exc.__class__.__name__}: {exc}"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -333,6 +338,7 @@ def main(argv: list[str] | None = None) -> int:
 
     app = QApplication(args)
     configure_app_identity()
+    apply_theme(app)
     if get_app_icon_path().is_file():
         app.setWindowIcon(QIcon(str(get_app_icon_path())))
 

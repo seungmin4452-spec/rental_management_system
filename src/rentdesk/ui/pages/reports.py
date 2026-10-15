@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 from rentdesk.domain.display import seoul_today
 from rentdesk.domain.models import ORDER_STATUS_LABELS, LifecycleStatus, OrderStatus
 from rentdesk.services.reports import DISCLAIMER, ReportExistsError, ReportTable
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DateEdit, SeoulDateTimeEdit, now_seoul_minute
 
@@ -73,7 +73,7 @@ class ReportsPage(Page):
         lay = QVBoxLayout(body)
         notice = QLabel(f"엑셀(.xlsx)로 저장합니다. {DISCLAIMER}")
         notice.setWordWrap(True)
-        notice.setStyleSheet("color: #666;")
+        theme.set_tone(notice, "muted")
         lay.addWidget(notice)
         for g in (g1, g2, g3, g4, g5):
             lay.addWidget(g)
@@ -91,7 +91,7 @@ class ReportsPage(Page):
         form = QFormLayout(box)
         for label, widget in fields:
             form.addRow(label, widget)
-        btn = QPushButton("엑셀로 저장…")
+        btn = theme.set_variant(QPushButton("엑셀로 저장…"), "primary")
         btn.clicked.connect(lambda: self.save_dialog(kind))
         row = QHBoxLayout()
         row.addStretch(1)

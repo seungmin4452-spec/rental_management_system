@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWi
 
 from rentdesk.domain.display import format_dt
 from rentdesk.domain.models import OrderStatus
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable
 
@@ -17,10 +17,11 @@ class RentalsPage(Page):
     def __init__(self, ctx, nav, parent: QWidget | None = None) -> None:
         super().__init__(ctx, nav, parent)
         self.to_checkout = DataTable(["시작", "반납 예정", "예약번호", "고객", "장비 수"])
-        self.to_return = DataTable(["약정 반납", "예약번호", "고객", "대여 중", "반납 완료", "연체"])
+        self.to_return = DataTable(["약정 반납", "예약번호", "고객", "대여 중", "반납 완료", "연체"],
+                                   badge_columns=(5,))
         self.to_checkout.activated_key.connect(lambda k: self.open_checkout(int(k)))
         self.to_return.activated_key.connect(lambda k: self.open_return(int(k)))
-        checkout_btn = QPushButton("출고 처리")
+        checkout_btn = theme.set_variant(QPushButton("출고 처리"), "primary")
         checkout_btn.clicked.connect(lambda: self._selected(self.to_checkout, self.open_checkout))
         return_btn = QPushButton("반납 처리")
         return_btn.clicked.connect(lambda: self._selected(self.to_return, self.open_return))

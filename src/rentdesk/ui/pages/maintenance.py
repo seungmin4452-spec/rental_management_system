@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 )
 
 from rentdesk.domain.display import format_dt
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.dialogs.block_dialog import BlockDialog
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable, SeoulDateTimeEdit, empty_hint, now_seoul_minute
@@ -55,7 +55,7 @@ class MaintenancePage(Page):
         super().__init__(ctx, nav, parent)
         self.include_closed = QCheckBox("종료된 정비 포함")
         self.include_closed.toggled.connect(self.refresh)
-        add_btn = QPushButton("정비/사용 불가 등록")
+        add_btn = theme.set_variant(QPushButton("정비/사용 불가 등록"), "primary")
         add_btn.clicked.connect(self.add)
         close_btn = QPushButton("정비 종료")
         close_btn.clicked.connect(self.close_selected)
@@ -64,7 +64,8 @@ class MaintenancePage(Page):
         top.addWidget(close_btn)
         top.addStretch(1)
         top.addWidget(self.include_closed)
-        self.table = DataTable(["장비번호", "장비명", "시작", "종료(예정)", "사유", "상태"])
+        self.table = DataTable(["장비번호", "장비명", "시작", "종료(예정)", "사유", "상태"],
+                               badge_columns=(5,))
         self.table.activated_key.connect(self._open_asset)
         self.empty = empty_hint("진행 중인 정비 일정이 없습니다.", "정비 등록", self.add)
         lay = QVBoxLayout(self)

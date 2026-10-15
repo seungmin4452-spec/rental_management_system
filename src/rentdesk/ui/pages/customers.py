@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 )
 
 from rentdesk.domain.models import Customer
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.dialogs.customer_dialog import CUSTOMER_TYPE_LABELS, CustomerDialog
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable, empty_hint
@@ -38,10 +38,10 @@ class CustomersPage(Page):
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.empty = empty_hint("등록된 고객이 없습니다.", "고객 등록", self.create)
 
-        self.new_btn = QPushButton("고객 등록")
+        self.new_btn = theme.set_variant(QPushButton("고객 등록"), "primary")
         self.edit_btn = QPushButton("수정")
         self.archive_btn = QPushButton("보관 처리")
-        self.delete_btn = QPushButton("삭제")
+        self.delete_btn = theme.set_variant(QPushButton("삭제"), "danger")
         self.reserve_btn = QPushButton("새 예약")
         self.orders_btn = QPushButton("예약 보기")
         self.new_btn.clicked.connect(self.create)

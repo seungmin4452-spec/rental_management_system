@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QVBox
 
 from rentdesk.domain.display import format_dt, format_won
 from rentdesk.domain.models import ORDER_STATUS_LABELS
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable
 
@@ -19,7 +19,7 @@ class SettlementsPage(Page):
         self.unsettled_only = QCheckBox("미정산만 보기")
         self.unsettled_only.setChecked(True)
         self.unsettled_only.toggled.connect(self.refresh)
-        open_btn = QPushButton("정산 열기")
+        open_btn = theme.set_variant(QPushButton("정산 열기"), "primary")
         open_btn.clicked.connect(self.open_selected)
         self.count = QLabel()
         top = QHBoxLayout()
@@ -28,11 +28,12 @@ class SettlementsPage(Page):
         top.addStretch(1)
         top.addWidget(self.count)
         self.table = DataTable(
-            ["예약번호", "고객", "상태", "출고", "청구 합계", "대여료 순수금", "미수금", "보증금 보유", "정산"]
+            ["예약번호", "고객", "상태", "출고", "청구 합계", "대여료 순수금", "미수금", "보증금 보유", "정산"],
+            badge_columns=(2, 8),
         )
         self.table.activated_key.connect(lambda k: self.open_settlement(int(k)))
         note = QLabel("반납 완료와 정산 완료는 별개입니다. 미수금·보증금 보유액이 모두 0원이어야 정산 완료입니다.")
-        note.setStyleSheet("color: #666;")
+        theme.set_tone(note, "muted")
         lay = QVBoxLayout(self)
         lay.addLayout(top)
         lay.addWidget(self.table, 1)

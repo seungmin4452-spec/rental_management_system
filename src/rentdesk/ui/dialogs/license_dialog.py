@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from rentdesk.domain.display import format_dt
 from rentdesk.services.licensing import LicenseCheck, LicenseService, format_machine_code
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import button_row
 
 
@@ -47,7 +47,7 @@ class LicensePanel(QWidget):
         code_row = QHBoxLayout()
         code_row.addWidget(self.code, 1)
         code_row.addWidget(copy_btn)
-        self.load_btn = QPushButton("라이선스 파일 불러오기…")
+        self.load_btn = theme.set_variant(QPushButton("라이선스 파일 불러오기…"), "primary")
         self.load_btn.clicked.connect(self.choose_file)
         form = QFormLayout()
         form.addRow("상태", self.status_label)
@@ -57,7 +57,7 @@ class LicensePanel(QWidget):
             "PC나 운영체제(Mac ↔ Windows)를 바꾸면 기기 코드가 달라지므로 사용권 이전(재발급)을 요청해주세요."
         )
         hint.setWordWrap(True)
-        hint.setStyleSheet("color: #666;")
+        theme.set_tone(hint, "muted")
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addLayout(form)
@@ -73,7 +73,7 @@ class LicensePanel(QWidget):
             if result.info.expires_at is not None:
                 text += f" · 만료: {format_dt(result.info.expires_at)}"
         self.status_label.setText(text)
-        self.status_label.setStyleSheet("" if result.valid else "color: #b00020;")
+        theme.set_tone(self.status_label, None if result.valid else "danger")
         code = self.service.machine_code()
         self.code.setText(format_machine_code(code) if code else "확인할 수 없음")
         return result

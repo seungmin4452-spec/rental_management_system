@@ -54,10 +54,17 @@
 - [ ] Windows 1366×768, macOS Retina/논리 해상도 주요 화면 확인
 - [ ] 실제 업체 담당자 2~3명 피드백 반영
 - [ ] 사용 설명서·빠른 시작 안내·샘플 데이터
-- [ ] 오픈소스 라이선스 고지 및 이용조건 검토
+- [ ] 오픈소스 라이선스 고지 및 이용조건 검토 — UI 아이콘에 Lucide(ISC) 경로 데이터 사용(`ui/theme.py`), 고지문에 포함할 것. Pretendard(OFL)를 번들하면 함께 고지
 - [ ] 15장 Definition of Done 전체 확인
 - [ ] macOS arm64 / Windows x64 **각각** 지원 매트릭스·스모크 테스트 결과 기록
 - [ ] Windows `setup.exe`, Mac 서명·공증된 `.dmg` 동시 릴리스 1.0.0 기록
+
+## UI 디자인 개편 (A · 클린 블루)
+- [x] 색 토큰(라이트/다크) + QSS 테마 `ui/theme.py`, Fusion 스타일로 Mac/Windows 모양 통일, OS 다크 모드 자동 전환
+- [x] 좌측 아이콘 메뉴·페이지 제목·검색창 레이아웃, 대시보드 카드, 표 상태 배지, 주요/위험 버튼 구분
+- [x] 화면 코드의 인라인 색(setStyleSheet) 제거 → `theme.set_tone` / `theme.set_variant`
+- [ ] Windows 11 x64 실기기에서 글꼴(맑은 고딕)·배율 125/150% 화면 확인
+- [ ] Pretendard 글꼴 번들 여부 결정(설치 용량 vs 일관성)
 
 ## P1 아이디어 백로그(지금 구현 금지)
 - [ ] 주간/월간 캘린더

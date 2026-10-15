@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
 from rentdesk.domain.availability import ASSET_STATE_LABELS, AssetState
 from rentdesk.domain.display import format_won
 from rentdesk.domain.models import Asset, LifecycleStatus
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.dialogs.asset_dialog import AssetDialog
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable, empty_hint
@@ -42,17 +42,18 @@ class AssetsPage(Page):
         filters.addWidget(self.include_retired)
 
         self.table = DataTable(
-            ["관리번호", "장비명", "카테고리", "모델명", "일 대여료", "보증금", "가용 상태", "운영 상태"]
+            ["관리번호", "장비명", "카테고리", "모델명", "일 대여료", "보증금", "가용 상태", "운영 상태"],
+            badge_columns=(6, 7),
         )
         self.table.activated_key.connect(lambda key: self.nav.open_asset(int(key)))
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.empty = empty_hint("등록된 장비가 없습니다.", "장비 등록", self.create)
 
-        self.new_btn = QPushButton("장비 등록")
+        self.new_btn = theme.set_variant(QPushButton("장비 등록"), "primary")
         self.edit_btn = QPushButton("수정")
         self.detail_btn = QPushButton("상세/이력")
-        self.retire_btn = QPushButton("은퇴 처리")
-        self.delete_btn = QPushButton("삭제")
+        self.retire_btn = theme.set_variant(QPushButton("은퇴 처리"), "danger")
+        self.delete_btn = theme.set_variant(QPushButton("삭제"), "danger")
         self.new_btn.clicked.connect(self.create)
         self.edit_btn.clicked.connect(self.edit)
         self.detail_btn.clicked.connect(lambda: self._with_selected(lambda a: self.nav.open_asset(a.id)))

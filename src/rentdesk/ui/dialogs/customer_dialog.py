@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 from rentdesk.context import AppContext
 from rentdesk.domain.models import Customer, CustomerType
 from rentdesk.services.customers import CustomerInput
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import FormErrors
 
 CUSTOMER_TYPE_LABELS = {CustomerType.INDIVIDUAL: "개인", CustomerType.BUSINESS: "사업자"}
@@ -59,7 +59,7 @@ class CustomerDialog(QDialog):
         self.errors.add_row("메모", self.note, "note")
         notice = QLabel(PRIVACY_NOTICE)
         notice.setWordWrap(True)
-        notice.setStyleSheet("color: #8a6d00;")
+        theme.set_tone(notice, "warning")
 
         if customer:
             self.name.setText(customer.name)
@@ -69,7 +69,8 @@ class CustomerDialog(QDialog):
             self.note.setPlainText(customer.note or "")
 
         buttons = QDialogButtonBox()
-        buttons.addButton("저장", QDialogButtonBox.ButtonRole.AcceptRole)
+        ok = buttons.addButton("저장", QDialogButtonBox.ButtonRole.AcceptRole)
+        theme.set_variant(ok, "primary")
         buttons.addButton("취소", QDialogButtonBox.ButtonRole.RejectRole)
         buttons.accepted.connect(self.submit)
         buttons.rejected.connect(self.reject)

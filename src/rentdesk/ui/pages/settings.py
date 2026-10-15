@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 from rentdesk.domain.display import format_dt
 from rentdesk.services.backup import UNENCRYPTED_NOTICE, BackupResult, ValidatedBackup
 from rentdesk.services.settings import MAX_MINUTES
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.backup_actions import (
     choose_backup_file,
     confirm_restore,
@@ -58,7 +58,7 @@ class SettingsPage(Page):
         self.policy_errors.add_row("연체 유예시간", self.grace, "grace_minutes")
         self.policy_errors.add_row("연체 배수", self.multiplier, "late_multiplier")
         self.policy_errors.add_row("정비·대여 전환 버퍼", self.buffer, "turnaround_buffer_minutes")
-        save_policy = QPushButton("정책 저장")
+        save_policy = theme.set_variant(QPushButton("정책 저장"), "primary")
         save_policy.clicked.connect(self.save_policy)
         pf.addRow(button_row(save_policy))
 
@@ -71,7 +71,7 @@ class SettingsPage(Page):
         self.biz_phone.setMaxLength(30)
         self.biz_errors.add_row("상호", self.biz_name, "business_name")
         self.biz_errors.add_row("전화번호", self.biz_phone, "business_phone")
-        save_biz = QPushButton("사업자 정보 저장")
+        save_biz = theme.set_variant(QPushButton("사업자 정보 저장"), "primary")
         save_biz.clicked.connect(self.save_business)
         bf.addRow(button_row(save_biz))
 
@@ -82,7 +82,7 @@ class SettingsPage(Page):
             "라이선스 파일은 백업에 포함되지 않습니다."
         )
         notice.setWordWrap(True)
-        notice.setStyleSheet("color: #666;")
+        theme.set_tone(notice, "muted")
         self.last_backup_label = QLabel()
         self.backup_dir_label = QLabel()
         self.backup_dir_label.setWordWrap(True)
@@ -91,9 +91,9 @@ class SettingsPage(Page):
         bform.addRow("기본 백업 폴더", self.backup_dir_label)
         self.backup_dir_btn = QPushButton("기본 폴더 변경…")
         self.backup_dir_btn.clicked.connect(self.choose_backup_dir)
-        self.backup_btn = QPushButton("백업 파일 만들기…")
+        self.backup_btn = theme.set_variant(QPushButton("백업 파일 만들기…"), "primary")
         self.backup_btn.clicked.connect(self.backup_dialog)
-        self.restore_btn = QPushButton("백업에서 복원…")
+        self.restore_btn = theme.set_variant(QPushButton("백업에서 복원…"), "danger")
         self.restore_btn.clicked.connect(self.restore_dialog)
         bl.addWidget(notice)
         bl.addLayout(bform)

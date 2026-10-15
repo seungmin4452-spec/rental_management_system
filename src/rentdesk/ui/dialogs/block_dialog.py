@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 from rentdesk.context import AppContext
 from rentdesk.domain.errors import ValidationError
 from rentdesk.services.availability import describe_conflict
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import FormErrors, SeoulDateTimeEdit, now_seoul_minute
 
 
@@ -54,7 +54,8 @@ class BlockDialog(QDialog):
         self.errors.add_row("사유 *", self.reason, "reason")
 
         buttons = QDialogButtonBox()
-        buttons.addButton("등록", QDialogButtonBox.ButtonRole.AcceptRole)
+        ok = buttons.addButton("등록", QDialogButtonBox.ButtonRole.AcceptRole)
+        theme.set_variant(ok, "primary")
         buttons.addButton("취소", QDialogButtonBox.ButtonRole.RejectRole)
         buttons.accepted.connect(self.submit)
         buttons.rejected.connect(self.reject)

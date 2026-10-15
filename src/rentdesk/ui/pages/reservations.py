@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from rentdesk.domain.display import format_dt, format_won, seoul_day_range, seoul_today
 from rentdesk.domain.models import ORDER_STATUS_LABELS, OrderStatus
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable, DateEdit, empty_hint
 
@@ -54,11 +54,12 @@ class ReservationsPage(Page):
         filters.addWidget(self.period_to)
 
         self.table = DataTable(
-            ["예약번호", "고객", "예약 기간", "장비 수", "상태", "예상 대여료", "출고/반납"]
+            ["예약번호", "고객", "예약 기간", "장비 수", "상태", "예상 대여료", "출고/반납"],
+            badge_columns=(4,),
         )
         self.table.activated_key.connect(lambda key: self.nav.open_order(int(key)))
         self.empty = empty_hint("아직 예약이 없습니다.", "새 예약", lambda: self.nav.new_reservation())
-        new_btn = QPushButton("새 예약")
+        new_btn = theme.set_variant(QPushButton("새 예약"), "primary")
         new_btn.clicked.connect(lambda: self.nav.new_reservation())
         detail_btn = QPushButton("상세 보기")
         detail_btn.clicked.connect(self.open_selected)

@@ -25,7 +25,7 @@ from rentdesk.domain.errors import DomainError
 from rentdesk.domain.models import ORDER_STATUS_LABELS, ChargeKind, MoneyKind
 from rentdesk.domain.settlement import INTERNAL_KINDS, MONEY_KIND_LABELS, REVERSAL_OF
 from rentdesk.services.settlements import MoneyInput
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.dialogs.checkout_dialog import PAYMENT_LABELS, payment_combo
 from rentdesk.ui.widgets import DataTable, FormErrors, WonSpinBox, button_row
 
@@ -89,7 +89,7 @@ class SettlementDialog(QDialog):
         self.errors.add_row("정정 대상(선택)", self.related, "related_entry_id")
         self.errors.add_row("비고", self.note, "note")
         form.addRow("저장 후", self.preview)
-        self.record_btn = QPushButton("거래 기록")
+        self.record_btn = theme.set_variant(QPushButton("거래 기록"), "primary")
         self.record_btn.clicked.connect(self.submit)
         form.addRow(button_row(self.record_btn))
 
@@ -125,7 +125,7 @@ class SettlementDialog(QDialog):
             self.figures[key].setText(f"<b>{format_won(v)}</b>")
         if s.is_settled:
             self.state.setText("정산 완료: 미수금과 보증금 보유잔액이 모두 0원입니다.")
-            self.state.setStyleSheet("color: #2e7d32;")
+            theme.set_tone(self.state, "success")
         else:
             parts = []
             if s.amount_due_won > 0:
@@ -135,7 +135,7 @@ class SettlementDialog(QDialog):
             if s.deposit_held_won:
                 parts.append(f"보증금 보유 {format_won(s.deposit_held_won)}")
             self.state.setText(f"[확인 필요] {' · '.join(parts)}. {SETTLE_NOTICE}")
-            self.state.setStyleSheet("color: #c62828;")
+            theme.set_tone(self.state, "danger")
         self.charges.set_rows([
             (c.id, [format_dt(c.created_at), CHARGE_KIND_LABELS[c.kind], format_won(c.amount_won),
                     c.description or ""])

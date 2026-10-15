@@ -34,7 +34,7 @@ from rentdesk.domain.display import format_dt, format_won
 from rentdesk.domain.errors import ConflictError, DomainError, ValidationError
 from rentdesk.domain.models import OrderStatus, RentalOrder
 from rentdesk.services.reservations import ReservationInput
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import FormErrors, SeoulDateTimeEdit, WonSpinBox, next_hour
 
 STEP_TITLES = ["고객·기간", "장비 선택", "금액 확인"]
@@ -57,10 +57,10 @@ class ReservationWizard(QDialog):
         self.stack.addWidget(self._build_step3())
 
         self.prev_btn = QPushButton("이전")
-        self.next_btn = QPushButton("다음")
+        self.next_btn = theme.set_variant(QPushButton("다음"), "primary")
         self.cancel_btn = QPushButton("취소")
         self.draft_btn = QPushButton("임시 저장")
-        self.confirm_btn = QPushButton("예약 확정")
+        self.confirm_btn = theme.set_variant(QPushButton("예약 확정"), "primary")
         self.save_btn = QPushButton("변경 저장")
         self.prev_btn.clicked.connect(self.go_prev)
         self.next_btn.clicked.connect(self.go_next)
@@ -153,7 +153,7 @@ class ReservationWizard(QDialog):
         self.asset_list.itemChanged.connect(self._on_item_changed)
         self.selected_label = QLabel()
         self.errors2 = QLabel()
-        self.errors2.setStyleSheet("color: #c62828;")
+        theme.set_tone(self.errors2, "danger")
         self.errors2.setWordWrap(True)
         lay.addLayout(filters)
         lay.addWidget(self.asset_list, 1)
@@ -175,7 +175,7 @@ class ReservationWizard(QDialog):
         warn = QLabel("주의: 예약 확정 시 동일 장비·기간의 충돌을 최종 다시 검사합니다. "
                       "임시 저장은 장비를 점유하지 않습니다.")
         warn.setWordWrap(True)
-        warn.setStyleSheet("color: #8a6d00;")
+        theme.set_tone(warn, "warning")
         form.addRow(self.summary)
         self.errors3.add_row("할인", self.discount, "discount_won")
         form.addRow("예상 금액", self.quote_label)

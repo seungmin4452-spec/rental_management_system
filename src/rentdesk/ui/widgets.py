@@ -1,6 +1,7 @@
 """공통 위젯: 서울 시각 입력, 원 단위 금액 입력, 읽기 전용 표, 필드 옆 오류 표시.
 
 화면 표시 형식은 `domain.display`를 사용하고, 업무 계산은 하지 않는다.
+색·모양은 `ui.theme`이 담당한다(여기에 색 값을 쓰지 않는다).
 """
 
 from __future__ import annotations
@@ -9,7 +10,6 @@ from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta
 
 from PySide6.QtCore import QDate, QDateTime, Qt, QTime, Signal
-from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QDateEdit,
@@ -29,9 +29,10 @@ from PySide6.QtWidgets import (
 
 from rentdesk.domain.errors import DomainError, ValidationError
 from rentdesk.domain.timeutil import SEOUL, floor_minute, to_seoul
+from rentdesk.ui import theme
 
 MAX_WON = 2_000_000_000  # QSpinBox 상한(약 20억 원). 소규모 렌탈 단일 금액에 충분.
-ERROR_STYLE = "color: #c62828;"
+ROW_HEIGHT = 44
 
 
 class SeoulDateTimeEdit(QDateTimeEdit):
@@ -102,17 +103,26 @@ class DataTable(QTableWidget):
 
     activated_key = Signal(object)
 
-    def __init__(self, headers: Sequence[str], parent: QWidget | None = None) -> None:
+    def __init__(self, headers: Sequence[str], parent: QWidget | None = None, *,
+                 badge_columns: Sequence[int] = ()) -> None:
+        """badge_columns: 상태 글자를 배지로 그릴 열 번호(`theme.STATUS_TONES`에 있는 글자만)."""
         super().__init__(0, len(headers), parent)
         self.setHorizontalHeaderLabels(list(headers))
         self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.setAlternatingRowColors(True)
+        self.setShowGrid(False)
+        self.setWordWrap(False)
         self.verticalHeader().setVisible(False)
+        self.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
         header = self.horizontalHeader()
         header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         header.setStretchLastSection(True)
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header.setHighlightSections(False)
+        self._badge_delegate = theme.StatusBadgeDelegate(self)
+        for col in badge_columns:
+            self.setItemDelegateForColumn(col, self._badge_delegate)
         self._keys: list[object] = []
         self.cellDoubleClicked.connect(self._on_double_click)
 
@@ -137,9 +147,14 @@ class DataTable(QTableWidget):
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                     )
                 if mark:
-                    item.setForeground(QColor("#c62828"))
+                    item.setForeground(theme.color("danger"))
                 self.setItem(r, c, item)
         self.resizeColumnsToContents()
+        header = self.horizontalHeader()
+        if header.stretchLastSection():
+            # 내용 맞춤 후 마지막 열이 다시 남은 폭을 채우도록(화면 전환 후 표가 덜 차는 문제)
+            header.setStretchLastSection(False)
+            header.setStretchLastSection(True)
 
     def key_at(self, row: int) -> object | None:
         return self._keys[row] if 0 <= row < len(self._keys) else None
@@ -175,7 +190,7 @@ class FormErrors:
         lay.setSpacing(2)
         lay.addWidget(widget)
         err = QLabel()
-        err.setStyleSheet(ERROR_STYLE)
+        theme.set_tone(err, "danger")
         err.setWordWrap(True)
         err.hide()
         lay.addWidget(err)
@@ -207,25 +222,52 @@ class StatCard(QFrame):
 
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setObjectName("StatCard")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         lay = QVBoxLayout(self)
+        lay.setContentsMargins(20, 16, 20, 16)
+        lay.setSpacing(4)
         self.title = QLabel(title)
+        self.title.setObjectName("StatTitle")
         self.value = QLabel("0")
-        font = self.value.font()
-        font.setPointSize(font.pointSize() + 10)
-        font.setBold(True)
-        self.value.setFont(font)
+        self.value.setObjectName("StatValue")
         lay.addWidget(self.title)
         lay.addWidget(self.value)
 
-    def set_value(self, value: int, *, alert: bool = False) -> None:
+    def set_value(self, value: int, *, alert: bool | str = False) -> None:
+        """alert: True면 0보다 클 때 빨강, "warning"이면 주황."""
         self.value.setText(str(value))
-        self.value.setStyleSheet(ERROR_STYLE if alert and value else "")
+        tone = None
+        if alert and value:
+            tone = alert if isinstance(alert, str) else "danger"
+        theme.set_tone(self.value, tone)
 
     def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt API
         self.clicked.emit()
         super().mouseReleaseEvent(event)
+
+
+def card(*, margins: tuple[int, int, int, int] = (20, 16, 20, 16)) -> tuple[QFrame, QVBoxLayout]:
+    """흰 카드(둥근 모서리) 상자와 그 안의 세로 레이아웃."""
+    box = QFrame()
+    box.setObjectName("Card")
+    lay = QVBoxLayout(box)
+    lay.setContentsMargins(*margins)
+    lay.setSpacing(10)
+    return box, lay
+
+
+def section_title(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setObjectName("SectionTitle")
+    return label
+
+
+def muted(text: str) -> QLabel:
+    label = QLabel(text)
+    label.setWordWrap(True)
+    theme.set_tone(label, "muted")
+    return label
 
 
 def button_row(*buttons: QPushButton, stretch_first: bool = True) -> QHBoxLayout:
@@ -244,7 +286,7 @@ def empty_hint(text: str, action_label: str | None = None,
     lay = QHBoxLayout(box)
     lay.setContentsMargins(0, 4, 0, 4)
     label = QLabel(text)
-    label.setStyleSheet("color: #666;")
+    theme.set_tone(label, "muted")
     lay.addWidget(label)
     if action_label and action:
         btn = QPushButton(action_label)

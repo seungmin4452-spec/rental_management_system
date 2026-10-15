@@ -27,7 +27,7 @@ from rentdesk.domain.errors import DomainError
 from rentdesk.domain.models import ReturnCondition
 from rentdesk.services.availability import describe_conflict
 from rentdesk.services.returns import ReturnItemInput, ReturnResult
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import SeoulDateTimeEdit, WonSpinBox, button_row, now_seoul_minute
 
 CONDITION_LABELS = {ReturnCondition.GOOD: "정상", ReturnCondition.MAINTENANCE_REQUIRED: "정비 필요"}
@@ -66,7 +66,7 @@ class ReturnDialog(QDialog):
                 f"{i.asset_code}({format_dt(i.actual_return_at)})" for i in returned
             ) if returned else ""
         )
-        done.setStyleSheet("color: #666;")
+        theme.set_tone(done, "muted")
 
         grid_box = QWidget()
         grid = QGridLayout(grid_box)
@@ -104,7 +104,7 @@ class ReturnDialog(QDialog):
         self.total = QLabel()
         select_all = QPushButton("전체 선택")
         select_all.clicked.connect(lambda: [r.check.setChecked(True) for r in self.rows])
-        self.submit_btn = QPushButton("선택 장비 반납 확정")
+        self.submit_btn = theme.set_variant(QPushButton("선택 장비 반납 확정"), "primary")
         self.submit_btn.clicked.connect(self.submit)
         cancel = QPushButton("취소")
         cancel.clicked.connect(self.reject)
@@ -125,11 +125,11 @@ class ReturnDialog(QDialog):
         except DomainError as exc:
             row.late_fee_won = 0
             row.late.setText(exc.message)
-            row.late.setStyleSheet("color: #c62828;")
+            theme.set_tone(row.late, "danger")
             return
         row.late_fee_won = p.late.late_fee_won
         row.late.setText(f"{format_won(p.late.late_fee_won)}\n{p.basis}")
-        row.late.setStyleSheet("color: #c62828;" if p.late.late_fee_won else "")
+        theme.set_tone(row.late, "danger" if p.late.late_fee_won else None)
         self._update_total()
 
     def selected(self) -> list[_Row]:

@@ -21,7 +21,7 @@ from rentdesk.domain.availability import ASSET_STATE_LABELS
 from rentdesk.domain.display import format_dt, format_won
 from rentdesk.domain.models import ORDER_STATUS_LABELS, Asset, LifecycleStatus
 from rentdesk.services.assets import AssetInput
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import DataTable, FormErrors, WonSpinBox, button_row
 
 ITEM_STATUS_LABELS = {"RESERVED": "예약", "OUT": "대여 중", "RETURNED": "반납", "CANCELED": "취소"}
@@ -82,7 +82,8 @@ class AssetDialog(QDialog):
             self.note.setPlainText(asset.note or "")
 
         buttons = QDialogButtonBox()
-        buttons.addButton("저장", QDialogButtonBox.ButtonRole.AcceptRole)
+        ok = buttons.addButton("저장", QDialogButtonBox.ButtonRole.AcceptRole)
+        theme.set_variant(ok, "primary")
         buttons.addButton("취소", QDialogButtonBox.ButtonRole.RejectRole)
         buttons.accepted.connect(self.submit)
         buttons.rejected.connect(self.reject)
@@ -133,9 +134,10 @@ class AssetDetailDialog(QDialog):
         self.header = QLabel()
         self.header.setWordWrap(True)
         self.tabs = QTabWidget()
-        self.upcoming = DataTable(["예약번호", "고객", "시작", "반납 예정", "예약 상태"])
+        self.upcoming = DataTable(["예약번호", "고객", "시작", "반납 예정", "예약 상태"],
+                                  badge_columns=(4,))
         self.history = DataTable(["예약번호", "고객", "출고", "약정 반납", "실제 반납", "품목 상태"])
-        self.blocks = DataTable(["시작", "종료(예정)", "사유", "상태"])
+        self.blocks = DataTable(["시작", "종료(예정)", "사유", "상태"], badge_columns=(3,))
         self.tabs.addTab(self.upcoming, "예정 예약")
         self.tabs.addTab(self.history, "대여 이력")
         self.tabs.addTab(self.blocks, "정비 이력")

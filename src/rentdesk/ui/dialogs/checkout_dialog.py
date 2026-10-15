@@ -17,7 +17,7 @@ from rentdesk.context import AppContext
 from rentdesk.domain.display import format_dt, format_won
 from rentdesk.domain.models import PaymentMethod, RentalOrder
 from rentdesk.services.checkout import CheckoutInput
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import (
     DataTable,
     FormErrors,
@@ -68,7 +68,7 @@ class CheckoutDialog(QDialog):
         self.amounts = QLabel()
         self.amounts.setWordWrap(True)
         self.blockers = QLabel()
-        self.blockers.setStyleSheet("color: #c62828;")
+        theme.set_tone(self.blockers, "danger")
         self.blockers.setWordWrap(True)
 
         form = QFormLayout()
@@ -87,7 +87,7 @@ class CheckoutDialog(QDialog):
         self.errors.add_row("받은 보증금(선택)", self.deposit, "deposit_in_won")
         self.errors.add_row("결제수단(기록용)", self.method, "payment_method")
 
-        self.submit_btn = QPushButton("출고 확정")
+        self.submit_btn = theme.set_variant(QPushButton("출고 확정"), "primary")
         self.submit_btn.clicked.connect(self.submit)
         cancel = QPushButton("취소")
         cancel.clicked.connect(self.reject)

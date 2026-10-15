@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QDialog, QLabel, QPushButton, QVBoxLayout, QWidget
 from rentdesk.context import AppContext
 from rentdesk.domain.display import format_dt, format_won
 from rentdesk.domain.models import ORDER_STATUS_LABELS, OrderStatus
-from rentdesk.ui import feedback
+from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import DataTable, button_row
 
 ITEM_LABELS = {"RESERVED": "예약", "OUT": "대여 중", "RETURNED": "반납", "CANCELED": "취소"}
@@ -31,8 +31,8 @@ class OrderDetailDialog(QDialog):
         self.money.setWordWrap(True)
 
         self.edit_btn = QPushButton("수정")
-        self.confirm_btn = QPushButton("예약 확정")
-        self.cancel_btn = QPushButton("예약 취소")
+        self.confirm_btn = theme.set_variant(QPushButton("예약 확정"), "primary")
+        self.cancel_btn = theme.set_variant(QPushButton("예약 취소"), "danger")
         self.checkout_btn = QPushButton("출고 처리")
         self.return_btn = QPushButton("반납 처리")
         self.settle_btn = QPushButton("정산 내역")
