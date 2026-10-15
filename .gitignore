@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+build/
+dist/
+
+# App data / DB (never commit real user data)
+*.db
+*.db-journal
+*.sqlite
+
+# Secrets / signing material
+*.pem
+*.key
+*.p12
+*.mobileprovision
+license/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/

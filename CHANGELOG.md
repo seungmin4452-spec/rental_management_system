@@ -1,0 +1,19 @@
+# RentDesk Lite 문서 변경 이력
+
+## v1.1 — 2026-10-15
+
+**요청:** 개발은 맥북에서 진행하고, 고객에게 Windows/macOS 양쪽 설치형 애플리케이션 제공.
+
+### 변경 요약
+
+- Windows 전용 제품 정의를 **macOS Apple Silicon arm64 + Windows 11 x64 필수 지원**으로 변경.
+- Intel Mac, Windows 10, macOS 구체적인 최저 버전은 테스트 전 지원을 광고하지 않도록 규정.
+- macOS용 `.app/.dmg` 생성·Developer ID 서명·공증과 Windows용 `.exe` 네이티브 빌드·설치를 추가.
+- 사용자 데이터 위치를 Windows 경로 고정에서 `QStandardPaths.AppLocalDataLocation` 기반으로 변경.
+- OS별 경로·라이선스 기기 ID 추상화, Mac↔Windows 백업 호환, CP-01~CP-10 테스트를 추가.
+- `CROSS_PLATFORM.md`와 맥북용 `START_HERE.md`, Claude 작업 지침/태스크/와이어프레임 업데이트.
+- 제품의 예약·반납·정산·보증금 비즈니스 규칙은 v1.0과 동일하게 유지.
+
+## v1.0 — 2026-10-15
+
+Windows 설치형 오프라인 장비 렌탈 관리 프로그램의 최초 상세 기획 기준선.
