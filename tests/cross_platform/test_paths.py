@@ -39,7 +39,7 @@ def test_app_data_dir_is_outside_install_locations():
 
 
 def test_app_data_dir_name_is_not_duplicated():
-    """조직명을 비워 `RentDeskLite/RentDeskLite` 중복을 없앤다(M3 이월 이슈)."""
+    """조직명을 비워 `RentalDesk/RentalDesk` 중복을 없앤다(M3 이월 이슈)."""
     app_data_dir = get_app_data_dir()
     assert app_data_dir.name == APPLICATION_NAME
     assert app_data_dir.parent.name != APPLICATION_NAME

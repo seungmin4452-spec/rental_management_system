@@ -1,13 +1,13 @@
-# RentDesk Lite 설치 안내 — macOS
+# RentalDesk 설치 안내 — macOS
 
 > 상태: **초안(M4)**. Apple Silicon(M1 이상) Mac용입니다. Intel Mac과 최소 macOS 버전은 실기기 검증 후 확정합니다.
 > 판매용 `.dmg`는 Developer ID 서명·Apple 공증을 마친 파일만 배포합니다(아직 미완료).
 
 ## 설치
 
-1. `RentDeskLite_x.y.z_macos-arm64.dmg`를 엽니다.
-2. `RentDeskLite` 아이콘을 `Applications`(응용 프로그램) 폴더로 끌어 놓습니다.
-3. 응용 프로그램 폴더에서 RentDesk Lite를 실행합니다.
+1. `RentalDesk_x.y.z_macos-arm64.dmg`를 엽니다.
+2. `RentalDesk` 아이콘을 `Applications`(응용 프로그램) 폴더로 끌어 놓습니다.
+3. 응용 프로그램 폴더에서 RentalDesk를 실행합니다.
    - 공증된 정식 배포 파일은 보안 경고 없이 열립니다. "확인되지 않은 개발자" 경고가 나오면 설치를 멈추고 판매자에게 문의하세요(보안 설정을 끄도록 안내하지 않습니다).
 
 ## 첫 실행 — 라이선스 등록
@@ -18,9 +18,9 @@
 
 ## 데이터 위치
 
-- `~/Library/Application Support/RentDeskLite/`
+- `~/Library/Application Support/RentalDesk/`
   - `data/rentdesk.db` 업무 데이터 · `backups/` 자동 보호 백업 · `logs/` 오류 기록 · `license/` 라이선스
-- 앱(`/Applications/RentDeskLite.app`)을 지우거나 새 버전으로 바꿔도 위 폴더의 데이터는 지워지지 않습니다.
+- 앱(`/Applications/RentalDesk.app`)을 지우거나 새 버전으로 바꿔도 위 폴더의 데이터는 지워지지 않습니다.
 - 이 폴더를 iCloud Drive·NAS로 옮기거나 여러 PC에서 동시에 열지 마세요. 다른 PC로 옮길 때는 백업 파일을 사용합니다.
 
 ## 백업 · 다른 PC로 옮기기

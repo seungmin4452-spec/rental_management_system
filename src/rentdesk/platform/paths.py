@@ -5,9 +5,9 @@ C:\\, /Applications, ~/Library 등 절대경로를 직접 하드코딩하지 않
 안정적인 값을 반환한다 (app.py에서 보장).
 
 조직명은 비워 둔다. Qt는 `<AppLocalData>/<조직명>/<앱 이름>`을 쓰므로 조직명과 앱 이름이
-같으면 `RentDeskLite/RentDeskLite`로 중복된다. 비우면 PRD 10.1 목표 경로가 된다.
-  macOS:   ~/Library/Application Support/RentDeskLite
-  Windows: %LOCALAPPDATA%/RentDeskLite
+같으면 `RentalDesk/RentalDesk`로 중복된다. 비우면 PRD 10.1 목표 경로가 된다.
+  macOS:   ~/Library/Application Support/RentalDesk
+  Windows: %LOCALAPPDATA%/RentalDesk
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, QStandardPaths
 
-APPLICATION_NAME = "RentDeskLite"
+APPLICATION_NAME = "RentalDesk"
 ORGANIZATION_NAME = ""
 
 

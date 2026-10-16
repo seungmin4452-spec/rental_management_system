@@ -14,14 +14,14 @@ def test_one_file_per_seoul_day_replaced_on_same_day(conn, svc, tmp_path):
     first = ab.run_auto_backup(conn, folder, kst(10, 20, 9))
     svc.add_asset("CAM-2")
     second = ab.run_auto_backup(conn, folder, kst(10, 20, 23, 50))
-    assert first.path == second.path and first.path.name == "RentDeskLite_auto_2026-10-20.zip"
+    assert first.path == second.path and first.path.name == "RentalDesk_auto_2026-10-20.zip"
     assert list(folder.glob("*.zip")) == [second.path]
     validated = inspect_backup(second.path)  # 수동 백업과 같은 형식·검증 통과
     assert validated.manifest.summary.counts["assets"] == 2
     validated.cleanup()
     # 서울 자정 넘으면 새 파일
     third = ab.run_auto_backup(conn, folder, kst(10, 21, 0, 5))
-    assert third.path.name == "RentDeskLite_auto_2026-10-21.zip"
+    assert third.path.name == "RentalDesk_auto_2026-10-21.zip"
 
 
 def test_keeps_only_latest_files(conn, tmp_path):
@@ -29,16 +29,16 @@ def test_keeps_only_latest_files(conn, tmp_path):
     for day in range(1, 6):
         ab.run_auto_backup(conn, folder, kst(10, day, 12), keep=3)
     names = sorted(p.name for p in folder.glob("*.zip"))
-    assert names == [f"RentDeskLite_auto_2026-10-0{d}.zip" for d in (3, 4, 5)]
+    assert names == [f"RentalDesk_auto_2026-10-0{d}.zip" for d in (3, 4, 5)]
 
 
 def test_prune_ignores_manual_backups(tmp_path):
-    (tmp_path / "RentDeskLite_backup_x.zip").write_text("x")
+    (tmp_path / "RentalDesk_backup_x.zip").write_text("x")
     for d in range(1, 4):
-        (tmp_path / f"RentDeskLite_auto_2026-10-0{d}.zip").write_text("x")
+        (tmp_path / f"RentalDesk_auto_2026-10-0{d}.zip").write_text("x")
     removed = ab.prune(tmp_path, keep=1)
     assert len(removed) == 2
-    assert (tmp_path / "RentDeskLite_backup_x.zip").exists()
+    assert (tmp_path / "RentalDesk_backup_x.zip").exists()
 
 
 def test_does_not_touch_manual_backup_reminder(conn, tmp_path):

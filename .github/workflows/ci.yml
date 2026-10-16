@@ -47,7 +47,7 @@ jobs:
         run: scripts/build_macos.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: RentDeskLite-macos-arm64-unsigned
+          name: RentalDesk-macos-arm64-unsigned
           path: dist/*.dmg
           retention-days: 14
 
@@ -69,6 +69,6 @@ jobs:
         run: ./scripts/build_windows.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: RentDeskLite-win-x64-unsigned
+          name: RentalDesk-win-x64-unsigned
           path: dist/*_setup.exe
           retention-days: 14

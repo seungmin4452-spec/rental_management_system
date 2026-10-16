@@ -1,12 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""RentDesk Lite PyInstaller 설정 (onedir). 각 OS에서 네이티브로 실행한다 — 크로스컴파일 불가.
+"""RentalDesk PyInstaller 설정 (onedir). 각 OS에서 네이티브로 실행한다 — 크로스컴파일 불가.
 
   macOS:   python -m PyInstaller --noconfirm --clean packaging/pyinstaller/rentdesk.spec
   Windows: 동일 명령 (Windows PowerShell)
 
 환경변수
-  RENTDESK_BUNDLE_ID  macOS 번들 ID (기본 com.example.rentdesklite — 출시 전 확정 필요)
-  RENTDESK_ICON       .icns(macOS) / .ico(Windows) 경로. 기본은 packaging/{macos,windows}/RentDeskLite.*
+  RENTDESK_BUNDLE_ID  macOS 번들 ID (기본 com.example.rentaldesk — 출시 전 확정 필요)
+  RENTDESK_ICON       .icns(macOS) / .ico(Windows) 경로. 기본은 packaging/{macos,windows}/RentalDesk.*
 비밀정보(서명 인증서·공증 자격증명·라이선스 개인키)는 이 파일·번들에 넣지 않는다.
 """
 
@@ -18,10 +18,10 @@ ROOT = Path(SPECPATH).resolve().parent.parent  # noqa: F821 - PyInstaller 제공
 sys.path.insert(0, str(ROOT / "src"))
 from rentdesk import __version__  # noqa: E402
 
-APP_NAME = "RentDeskLite"
-BUNDLE_ID = os.environ.get("RENTDESK_BUNDLE_ID", "com.example.rentdesklite")
-_DEFAULT_ICON = (ROOT / "packaging" / "macos" / "RentDeskLite.icns" if sys.platform == "darwin"
-                 else ROOT / "packaging" / "windows" / "RentDeskLite.ico")
+APP_NAME = "RentalDesk"
+BUNDLE_ID = os.environ.get("RENTDESK_BUNDLE_ID", "com.example.rentaldesk")
+_DEFAULT_ICON = (ROOT / "packaging" / "macos" / "RentalDesk.icns" if sys.platform == "darwin"
+                 else ROOT / "packaging" / "windows" / "RentalDesk.ico")
 ICON = os.environ.get("RENTDESK_ICON") or str(_DEFAULT_ICON)
 
 # 마이그레이션 SQL은 importlib.resources로 읽으므로 패키지 경로 그대로 넣는다.
@@ -80,13 +80,13 @@ if sys.platform == "darwin":
         bundle_identifier=BUNDLE_ID,
         version=__version__,
         info_plist={
-            "CFBundleDisplayName": "RentDesk Lite",
-            "CFBundleName": "RentDesk Lite",
+            "CFBundleDisplayName": "RentalDesk",
+            "CFBundleName": "RentalDesk",
             "CFBundleShortVersionString": __version__,
             "CFBundleVersion": __version__,
             "NSHighResolutionCapable": True,
             "NSRequiresAquaSystemAppearance": False,  # 다크 모드 허용
             "LSApplicationCategoryType": "public.app-category.business",
-            "NSHumanReadableCopyright": "RentDesk Lite",
+            "NSHumanReadableCopyright": "RentalDesk",
         },
     )

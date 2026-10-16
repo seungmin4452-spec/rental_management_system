@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""RentDesk Lite 오프라인 라이선스 발급 도구 — **판매자 PC에서만** 실행한다 (PRD 11.1).
+"""RentalDesk 오프라인 라이선스 발급 도구 — **판매자 PC에서만** 실행한다 (PRD 11.1).
 
 개인키는 이 저장소·설치파일·로그에 절대 넣지 않는다. 기본 보관 위치는 저장소 밖
 (`~/RentDeskSellerKeys/`)이며, 저장소 안 경로를 지정하면 거부한다.
@@ -10,10 +10,10 @@
 
   # 2) 고객이 보낸 기기 코드로 라이선스 발급
   python scripts/generate_license.py issue --machine-code ABCD-EFGH-IJKL-MNOP-QRST \\
-      --customer "OO렌탈" --out ~/Desktop/RentDeskLite_license.json
+      --customer "OO렌탈" --out ~/Desktop/RentalDesk_license.json
 
   # 3) 발급 파일 확인
-  python scripts/generate_license.py verify --file ~/Desktop/RentDeskLite_license.json \\
+  python scripts/generate_license.py verify --file ~/Desktop/RentalDesk_license.json \\
       --machine-code ABCD-EFGH-IJKL-MNOP-QRST
 
 발급 내역은 키 폴더의 `issued_licenses.csv`에 남는다(사용권 이전·재발급 확인용).
@@ -73,7 +73,7 @@ def cmd_keygen(args: argparse.Namespace) -> int:
     key = SigningKey.generate()
     content = json.dumps({
         "type": "ed25519",
-        "product": "RentDeskLite",
+        "product": "RentalDesk",
         "created_at_utc": now_utc().strftime("%Y-%m-%dT%H:%M:%SZ"),
         "private_key_hex": key.encode().hex(),
         "public_key_hex": key.verify_key.encode().hex(),
@@ -150,7 +150,7 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="RentDesk Lite 라이선스 발급 도구(판매자 전용)")
+    parser = argparse.ArgumentParser(description="RentalDesk 라이선스 발급 도구(판매자 전용)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     p = sub.add_parser("keygen", help="Ed25519 서명 키 생성(최초 1회)")

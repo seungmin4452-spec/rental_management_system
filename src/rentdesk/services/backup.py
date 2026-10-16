@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from rentdesk import PRODUCT, __version__
+from rentdesk import LEGACY_PRODUCTS, PRODUCT, __version__
 from rentdesk.domain.errors import DomainError
 from rentdesk.domain.timeutil import parse_utc_str, to_seoul, to_utc_str
 from rentdesk.persistence import repositories as repo
@@ -157,7 +157,7 @@ def _stamp(now: datetime) -> str:
 
 
 def suggested_backup_name(now: datetime) -> str:
-    return f"RentDeskLite_backup_{_stamp(now)}.zip"
+    return f"RentalDesk_backup_{_stamp(now)}.zip"
 
 
 def data_summary(conn: sqlite3.Connection) -> DataSummary:
@@ -260,8 +260,8 @@ def _parse_manifest(raw: bytes) -> BackupManifest:
         data = json.loads(raw.decode("utf-8"))
         if not isinstance(data, dict):
             raise ValueError("manifest")
-        if data.get("product") != PRODUCT:
-            raise BackupError("RentDesk Lite 백업 파일이 아닙니다.")
+        if data.get("product") not in (PRODUCT, *LEGACY_PRODUCTS):
+            raise BackupError("RentalDesk 백업 파일이 아닙니다.")
         fmt = data.get("backup_format_version")
         if not _is_int(fmt):
             raise ValueError("format")

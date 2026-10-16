@@ -13,8 +13,8 @@
 
 ```bash
 python scripts/generate_license.py issue --machine-code XXXX-XXXX-XXXX-XXXX-XXXX \
-    --customer "OO렌탈" --out ~/Desktop/RentDeskLite_OO렌탈.json
-python scripts/generate_license.py verify --file ~/Desktop/RentDeskLite_OO렌탈.json \
+    --customer "OO렌탈" --out ~/Desktop/RentalDesk_OO렌탈.json
+python scripts/generate_license.py verify --file ~/Desktop/RentalDesk_OO렌탈.json \
     --machine-code XXXX-XXXX-XXXX-XXXX-XXXX     # 앱 내장 공개키로 확인
 ```
 

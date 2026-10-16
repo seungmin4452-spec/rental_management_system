@@ -19,7 +19,7 @@ from rentdesk.services.backup import (
 )
 from rentdesk.ui import feedback
 
-FILE_FILTER = "RentDesk Lite 백업 (*.zip)"
+FILE_FILTER = "RentalDesk 백업 (*.zip)"
 
 
 def default_backup_folder(prefs: LocalPreferences | None) -> Path:

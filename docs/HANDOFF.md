@@ -8,6 +8,10 @@
 - 원격 저장소: `https://github.com/seungmin4452-spec/rental_management_system.git` (`main`은 `e477eda`까지, M4.5 작업은 브랜치 `m4.5-usability`).
 - U0~U6·U9(+반납 창 연체료 문구 정리)는 Windows PC에서 작업해 브랜치 **`m4.5-usability`**로 커밋·푸시했다(`main`에는 아직 합치지 않음). 다른 PC에서는 `git fetch && git switch m4.5-usability`로 이어간다.
 - M4.5는 크몽 판매 전 사용자 관점 검토에서 나온 개선 단계다. 상세 요구사항·완료 조건·진행 기록은 **`USABILITY_PLAN.md`**, 체크리스트는 `TASKS.md`의 "M4.5".
+- **2026-10-16 제품명 변경: RentDesk Lite → RentalDesk(렌탈데스크).** 표시 이름과 내부 식별자(`PRODUCT`, Qt 앱 이름, 번들 ID `com.example.rentaldesk`, 설치 파일·아이콘·백업 파일 이름)를 모두 바꿨다. 영향:
+  - 앱 데이터 폴더가 `RentalDesk`로 바뀌어 개발 중 쓰던 `RentDeskLite` 폴더의 데이터는 자동으로 옮기지 않는다(출시 전이라 고객 데이터 없음). 필요하면 옛 앱 버전에서 백업 → 새 버전에서 복원(옛 이름 백업 복원 허용, `LEGACY_PRODUCTS`).
+  - 기기 코드 계산에 제품명이 들어가므로 **기기 코드가 모두 바뀌고 기존 라이선스는 무효**. 개발용 라이선스는 다시 발급한다.
+  - 그대로 둔 것: Python 패키지 `rentdesk`, `rentdesk.spec`/`rentdesk.iss` 파일 이름, `RENTDESK_*` 환경변수, Inno Setup `AppId`, 판매자 키 폴더 `~/RentDeskSellerKeys`(실제 서명 키 위치라 바꾸지 않음), 공증 프로필 이름 `rentdesk-notary`.
 - M4 미완료 항목(Developer ID 서명·공증, Windows 네이티브 빌드, Python 미설치 PC 설치 검증, Mac↔Windows 실제 왕복 복원, CP-02~CP-10)과 M5 출시 항목은 그대로 남아 있다.
 
 ## 다음 할 일
@@ -106,6 +110,6 @@ scripts/build_macos.sh                # .app + .dmg (ad-hoc 서명, 공증 생�
 - 실기기 수동 확인 필요: 1366×768·FHD 125%/150%·Retina 화면 배율, 옛 버전(스키마 2) 백업을 새 버전에서 복원하는 왕복, 큰 DB에서 종료 시 자동 백업 시간.
 - `support.json`의 판매자 문의 문구는 판매 전 사용자 확인 필요. 사용 안내 페이지가 생기면 `manual_url`(https만) 입력.
 - 판매 페이지·설치 안내서·PRD 본문 용어를 U1의 새 용어로 맞추는 문서 작업이 남음.
-- M4의 미완료 사항(Developer ID 서명·공증, Windows 빌드 `build_windows.ps1`/`.iss` 미실행, Inno Setup `Korean.isl` 확인, 번들 ID `com.example.rentdesklite` 확정)은 그대로.
+- M4의 미완료 사항(Developer ID 서명·공증, Windows 빌드 `build_windows.ps1`/`.iss` 미실행, Inno Setup `Korean.isl` 확인, 번들 ID `com.example.rentaldesk` 확정)은 그대로.
 - 장비 사진·QR, 장비 세트, 암호화 백업, 고객 목록 엑셀, 부분 출고는 여전히 P1(구현하지 않음).
 - U10 손 확인 필요: Windows Excel·Mac Numbers·한셀에서 저장한 xlsx를 실제로 가져와 보기(테스트는 openpyxl로 만든 파일만 사용).

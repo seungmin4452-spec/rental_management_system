@@ -16,7 +16,7 @@ def test_runtime_icon_png_loads():
 
 
 def test_windows_ico_has_all_sizes():
-    data = (ROOT / "packaging" / "windows" / "RentDeskLite.ico").read_bytes()
+    data = (ROOT / "packaging" / "windows" / "RentalDesk.ico").read_bytes()
     reserved, kind, count = struct.unpack_from("<HHH", data, 0)
     assert (reserved, kind) == (0, 1)
     sizes = {data[6 + 16 * i] or 256 for i in range(count)}
@@ -24,4 +24,4 @@ def test_windows_ico_has_all_sizes():
 
 
 def test_macos_icns_present():
-    assert (ROOT / "packaging" / "macos" / "RentDeskLite.icns").read_bytes()[:4] == b"icns"
+    assert (ROOT / "packaging" / "macos" / "RentalDesk.icns").read_bytes()[:4] == b"icns"

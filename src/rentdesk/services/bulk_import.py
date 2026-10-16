@@ -58,7 +58,7 @@ log = logging.getLogger("rentdesk.bulk_import")
 MAX_ROWS = 5000
 MAX_FILE_BYTES = 20 * 1024 * 1024
 HEADER_SEARCH_ROWS = 10
-BACKUP_PREFIX = "RentDeskLite_before_import_"
+BACKUP_PREFIX = "RentalDesk_before_import_"
 BACKUP_KEEP = 10
 
 # 개인정보 보호: 이런 머리글의 열은 값을 읽지 않는다(PRD — 민감정보 수집 금지).

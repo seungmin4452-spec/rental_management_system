@@ -1,4 +1,4 @@
-# Claude Code 프로젝트 지침 — RentDesk Lite
+# Claude Code 프로젝트 지침 — RentalDesk
 
 이 프로젝트는 **크몽에서 여러 고객에게 한 번 개발한 동일 제품을 반복 판매**할 목적으로 만드는 **맥북에서 개발하고 macOS/Windows 모두에 배포하는 오프라인 설치형 장비 렌탈 관리 프로그램**이다.
 

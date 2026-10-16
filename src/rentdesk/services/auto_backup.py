@@ -23,7 +23,7 @@ from rentdesk.services.backup import create_backup
 log = logging.getLogger("rentdesk.auto_backup")
 
 KEEP = 14
-PREFIX = "RentDeskLite_auto_"
+PREFIX = "RentalDesk_auto_"
 ENABLED_KEY = "auto_backup_enabled"
 COPY_KEY = "auto_backup_copy_to_backup_dir"
 LAST_KEY = "auto_backup_last_utc"

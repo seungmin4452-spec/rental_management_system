@@ -7,7 +7,7 @@ from tests.support import kst
 def test_main_window_constructs_with_menu_and_min_size(ctx):
     window = MainWindow(ctx)
 
-    assert window.windowTitle() == "RentDesk Lite"
+    assert window.windowTitle() == "RentalDesk"
     assert window.menu_list.count() == len(MENU_ITEMS) == 10
     # 화면이 충분하면 설계 최소 크기, 작으면(테스트용 가상 화면 등) 작업 영역에 맞춰 줄인다
     avail = window.screen().availableGeometry()

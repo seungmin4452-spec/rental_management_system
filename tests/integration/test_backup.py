@@ -123,7 +123,7 @@ def test_manifest_fields_and_no_absolute_paths_or_license(svc, conn, tmp_path):
         db_bytes = zf.read(DB_MEMBER)
     for key in ("backup_format_version", "schema_version", "created_at_utc", "sha256", "product"):
         assert key in manifest
-    assert manifest["product"] == "RentDeskLite"
+    assert manifest["product"] == "RentalDesk"
     assert manifest["schema_version"] == latest_schema_version()
     assert manifest["sha256"] == hashlib.sha256(db_bytes).hexdigest()
     assert str(tmp_path) not in json.dumps(manifest, ensure_ascii=False)
@@ -330,6 +330,20 @@ def test_backup_from_other_os_restores(svc, conn, backup_file, tmp_path):
     validated = inspect_backup(other)
     try:
         assert validated.manifest.source_os == "Windows"
+        restored = restore_database(validated, tmp_path / "data" / "rentdesk.db",
+                                    now=svc.clock.now, backup_dir=tmp_path / "bk")
+        assert data_summary(restored) == data_summary(conn)
+        restored.close()
+    finally:
+        validated.cleanup()
+
+
+def test_backup_made_under_old_product_name_restores(svc, conn, backup_file, tmp_path):
+    """이름 변경(RentDesk Lite → RentalDesk) 전에 만든 백업도 복원할 수 있다."""
+    old = _rewrite_zip(backup_file, tmp_path / "old_name.zip",
+                       manifest=lambda m: m.update(product="RentDeskLite"))
+    validated = inspect_backup(old)
+    try:
         restored = restore_database(validated, tmp_path / "data" / "rentdesk.db",
                                     now=svc.clock.now, backup_dir=tmp_path / "bk")
         assert data_summary(restored) == data_summary(conn)

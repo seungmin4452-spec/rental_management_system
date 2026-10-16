@@ -1,4 +1,4 @@
--- RentDesk Lite 초기 스키마 (PRD 8.1)
+-- RentalDesk 초기 스키마 (PRD 8.1)
 -- 규칙
 --  * 시각 컬럼은 UTC 'YYYY-MM-DDTHH:MM:SSZ' 텍스트 (텍스트 정렬 = 시간 순서)
 --  * 금액은 KRW INTEGER. typeof 검사로 실수/문자열 저장 차단

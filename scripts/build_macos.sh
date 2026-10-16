@@ -25,15 +25,15 @@ if [[ "${SKIP_TESTS:-0}" != "1" ]]; then
   QT_QPA_PLATFORM=offscreen "$PYTHON" -m pytest -q
 fi
 
-rm -rf build/pyinstaller dist/RentDeskLite dist/RentDeskLite.app
+rm -rf build/pyinstaller dist/RentalDesk dist/RentalDesk.app
 "$PYTHON" -m PyInstaller --noconfirm --clean \
   --workpath build/pyinstaller --distpath dist packaging/pyinstaller/rentdesk.spec
 
-APP="dist/RentDeskLite.app"
+APP="dist/RentalDesk.app"
 packaging/macos/sign_app.sh "$APP"
 scripts/smoke_macos.sh "$APP"
 
-DMG="dist/RentDeskLite_${VERSION}_${SUFFIX}.dmg"
+DMG="dist/RentalDesk_${VERSION}_${SUFFIX}.dmg"
 packaging/macos/create_dmg.sh "$APP" "$DMG"
 
 if [[ -n "${MACOS_SIGN_IDENTITY:-}" && -n "${NOTARY_PROFILE:-}" ]]; then

@@ -1,4 +1,4 @@
-# RentDesk Lite — 맥북에서 시작하는 Claude Code 개발 안내
+# RentalDesk — 맥북에서 시작하는 Claude Code 개발 안내
 
 > **제품 기획 v1.1** — 맥북을 주 개발환경으로 사용하고 **macOS + Windows**에 같은 기능의 설치형 앱을 배포합니다. 이 ZIP에는 기획서만 있으며 소스코드·서명된 설치파일은 없습니다.
 
@@ -22,7 +22,7 @@
 ## Claude에게 첫 메시지로 붙여넣을 프롬프트
 
 ```text
-현재 작업 디렉터리는 RentDesk Lite 프로젝트 루트입니다.
+현재 작업 디렉터리는 RentalDesk 프로젝트 루트입니다.
 나는 맥북에서 개발하고, 최종 고객에게는 macOS와 Windows용 설치형 앱을 모두 판매할 예정입니다.
 
 PRD.md, CROSS_PLATFORM.md, CLAUDE.md, TASKS.md, WIREFRAMES.md, CHANGELOG.md를 모두 읽으세요.
@@ -43,8 +43,8 @@ P1/P2는 임의로 구현하지 마세요.
 
 ## 릴리스 파일 형태
 
-- Windows: `RentDeskLite_1.0.0_win-x64_setup.exe` (네이티브 Windows 빌드)
-- macOS Apple Silicon: `RentDeskLite_1.0.0_macos-arm64.dmg` (Developer ID 서명 및 Apple 공증)
+- Windows: `RentalDesk_1.0.0_win-x64_setup.exe` (네이티브 Windows 빌드)
+- macOS Apple Silicon: `RentalDesk_1.0.0_macos-arm64.dmg` (Developer ID 서명 및 Apple 공증)
 
 사용자 DB는 앱 설치 경로가 아니라 OS별 사용자 앱 데이터 폴더에 저장합니다. Mac↔Windows 백업 이동은 지원하되 기기 라이선스 재발급/이전이 필요할 수 있습니다.
 

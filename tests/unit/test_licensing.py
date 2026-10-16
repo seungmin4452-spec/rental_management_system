@@ -156,7 +156,7 @@ def test_issue_validates_inputs(key, code):
 def test_service_missing_then_install(tmp_path, key, device, code):
     service = _service(tmp_path, key, device)
     assert service.check().status == LicenseStatus.MISSING
-    src = tmp_path / "다운로드" / "RentDeskLite_license.json"
+    src = tmp_path / "다운로드" / "RentalDesk_license.json"
     src.parent.mkdir()
     src.write_text(_issue(key, code), encoding="utf-8")
     assert service.install(src).valid

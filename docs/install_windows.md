@@ -1,17 +1,17 @@
-# RentDesk Lite 설치 안내 — Windows
+# RentalDesk 설치 안내 — Windows
 
 > 상태: **초안(M4)**. Windows 11 x64용입니다. Windows 10은 실기기 검증 후 지원 여부를 표시합니다.
 > 설치 파일은 코드 서명(Authenticode)을 하지 않은 상태로 배포합니다. 설치할 때 Windows 보안 경고가 나오며, 아래 "보안 경고가 나올 때"를 따라 진행합니다.
 
 ## 설치
 
-1. `RentDeskLite_x.y.z_win-x64_setup.exe`를 실행합니다. 보안 경고가 나오면 아래 "보안 경고가 나올 때"를 먼저 확인하세요.
+1. `RentalDesk_x.y.z_win-x64_setup.exe`를 실행합니다. 보안 경고가 나오면 아래 "보안 경고가 나올 때"를 먼저 확인하세요.
 2. 기본값은 관리자 권한 없이 현재 사용자용으로 설치합니다(모든 사용자용 설치는 설치 첫 화면에서 선택).
-3. 시작 메뉴 또는 바탕 화면의 **RentDesk Lite**를 실행합니다.
+3. 시작 메뉴 또는 바탕 화면의 **RentalDesk**를 실행합니다.
 
 ## 보안 경고가 나올 때
 
-RentDesk Lite 설치 파일에는 아직 마이크로소프트가 확인하는 **코드 서명**이 없습니다. 그래서 Windows와 인터넷 브라우저가 "자주 내려받지 않는 프로그램"으로 보고 경고를 띄웁니다. 프로그램에 문제가 있다는 뜻은 아닙니다. 다만 **판매자에게 직접 받은 파일인지 먼저 확인한 뒤** 진행해주세요(아래 "파일이 맞는지 확인하기").
+RentalDesk 설치 파일에는 아직 마이크로소프트가 확인하는 **코드 서명**이 없습니다. 그래서 Windows와 인터넷 브라우저가 "자주 내려받지 않는 프로그램"으로 보고 경고를 띄웁니다. 프로그램에 문제가 있다는 뜻은 아닙니다. 다만 **판매자에게 직접 받은 파일인지 먼저 확인한 뒤** 진행해주세요(아래 "파일이 맞는지 확인하기").
 
 > 화면 문구는 Windows·브라우저 버전에 따라 조금 다를 수 있습니다.
 
@@ -32,7 +32,7 @@ Chrome에서 "위험할 수 있는 파일" 경고가 나오면 다운로드 목�
 3. 게시자가 "알 수 없는 게시자"로 표시되고 **[실행]** 버튼이 나타납니다. **[실행]** 을 누릅니다.
 4. 이후 설치 화면이 정상적으로 열립니다.
 
-이 경고는 설치할 때 한 번 나오는 것이 보통입니다. 설치된 RentDesk Lite를 실행할 때 같은 화면이 나오면 같은 방법으로 진행합니다.
+이 경고는 설치할 때 한 번 나오는 것이 보통입니다. 설치된 RentalDesk를 실행할 때 같은 화면이 나오면 같은 방법으로 진행합니다.
 
 ### 3) 백신 프로그램이 파일을 막거나 지울 때
 
@@ -48,14 +48,14 @@ V3, 알약, Microsoft Defender 등이 서명 없는 프로그램을 의심 파�
 1. 시작 메뉴에서 **PowerShell**을 엽니다.
 2. 아래처럼 입력합니다(파일 위치는 실제 경로로 바꿉니다).
    ```powershell
-   Get-FileHash "$env:USERPROFILE\Downloads\RentDeskLite_x.y.z_win-x64_setup.exe"
+   Get-FileHash "$env:USERPROFILE\Downloads\RentalDesk_x.y.z_win-x64_setup.exe"
    ```
 3. 출력된 `Hash` 값이 판매자가 알려준 값과 같은지 확인합니다. 다르면 실행하지 말고 판매자에게 연락해주세요.
 
 ### 이런 경우에는 진행하지 마세요
 
 - 판매자(크몽 주문 메시지 등)가 아닌 곳에서 받은 파일
-- 파일 이름이 `RentDeskLite_버전_win-x64_setup.exe` 형식이 아닌 경우
+- 파일 이름이 `RentalDesk_버전_win-x64_setup.exe` 형식이 아닌 경우
 - SHA-256 값이 판매자 안내와 다른 경우
 
 ## 첫 실행 — 라이선스 등록
@@ -64,7 +64,7 @@ macOS와 같습니다: 기기 코드 복사 → 판매자에게 전달 → 받�
 
 ## 데이터 위치
 
-- `%LOCALAPPDATA%\RentDeskLite\` (예: `C:\Users\<사용자>\AppData\Local\RentDeskLite\`)
+- `%LOCALAPPDATA%\RentalDesk\` (예: `C:\Users\<사용자>\AppData\Local\RentalDesk\`)
   - `data\rentdesk.db` · `backups\` · `logs\` · `license\`
 - 설치 폴더(`Program Files` 또는 `AppData\Local\Programs`)에는 데이터를 저장하지 않습니다.
 - **제거해도 데이터는 삭제되지 않습니다.** 완전히 지우려면 백업 여부를 확인한 뒤 위 폴더를 직접 삭제하세요.

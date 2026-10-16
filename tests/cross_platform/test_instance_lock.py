@@ -22,7 +22,7 @@ def test_stale_lock_file_from_crash_is_recovered(tmp_path):
     # 같은 PC에서 이미 종료된 PID가 남긴 잠금 파일(비정상 종료 흉내).
     # QLockFile 형식: pid\nappname\nhostname\n — 다른 PC 이름이면 Qt는 회수하지 않는다(안전 측).
     host = QSysInfo.machineHostName()
-    path.write_text(f"999999\nRentDeskLite\n{host}\n", encoding="utf-8")
+    path.write_text(f"999999\nRentalDesk\n{host}\n", encoding="utf-8")
     lock = InstanceLock(path)
     assert lock.acquire()
     lock.release()

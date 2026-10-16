@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# RentDeskLite.app 코드서명. 내부 Mach-O → 프레임워크 → 앱 순서로 서명한다(--deep 의존 금지).
+# RentalDesk.app 코드서명. 내부 Mach-O → 프레임워크 → 앱 순서로 서명한다(--deep 의존 금지).
 #   MACOS_SIGN_IDENTITY="Developer ID Application: 이름 (TEAMID)"  → 배포용(Hardened Runtime + timestamp)
 #   MACOS_SIGN_IDENTITY 미설정                                     → ad-hoc 서명(개발·사내 시험용, 배포 금지)
 # 인증서·개인키는 로그인 키체인에만 두고 저장소/로그에 넣지 않는다.
 set -euo pipefail
-APP="${1:?usage: sign_app.sh path/to/RentDeskLite.app}"
+APP="${1:?usage: sign_app.sh path/to/RentalDesk.app}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ENTITLEMENTS="$HERE/entitlements.plist"
 

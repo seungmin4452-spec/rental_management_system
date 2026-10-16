@@ -117,7 +117,7 @@ class LicenseDialog(QDialog):
         quit_label: str = "종료",
     ) -> None:
         super().__init__(parent)
-        self.setWindowTitle("RentDesk Lite 라이선스 확인")
+        self.setWindowTitle("RentalDesk 라이선스 확인")
         self.setMinimumWidth(560)
         self.choice = GateChoice.QUIT
         self.panel = LicensePanel(service, self)

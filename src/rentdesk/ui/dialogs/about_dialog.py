@@ -36,7 +36,7 @@ class AboutDialog(QDialog):
         self.support = support or get_support_info()
         env = get_environment_info()
 
-        title = QLabel("RentDesk Lite")
+        title = QLabel("RentalDesk")
         title.setObjectName("SectionTitle")
         form = QFormLayout()
         form.addRow("버전", QLabel(__version__))

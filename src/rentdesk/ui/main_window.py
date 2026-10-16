@@ -41,7 +41,7 @@ from rentdesk.ui.pages.reservations import ReservationsPage
 from rentdesk.ui.pages.settings import SettingsPage
 from rentdesk.ui.pages.settlements import SettlementsPage
 
-WINDOW_TITLE = "RentDesk Lite"
+WINDOW_TITLE = "RentalDesk"
 DEFAULT_WIDTH = 1280
 DEFAULT_HEIGHT = 800
 MIN_WIDTH = 1100

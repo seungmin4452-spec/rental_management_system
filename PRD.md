@@ -1,11 +1,12 @@
-# RentDesk Lite — macOS·Windows 겸용 설치형 장비 렌탈 관리 프로그램
+# RentalDesk — macOS·Windows 겸용 설치형 장비 렌탈 관리 프로그램
 
 > **문서 유형:** 제품 요구사항 정의서(PRD) + 기능/기술 명세서  
 > **버전:** 1.1 (macOS 개발 + macOS/Windows 동시 출시를 위한 기준선)  
 > **작성일:** 2026-10-15  
 > **주요 독자:** Claude Code 및 개발 담당자  
 > **우선순위:** 본 문서의 `P0(MVP)` > `P1` > `P2`  
-> **제품 상태:** 기획안. 구현·배포·시장 검증 완료 상태가 아님.
+> **제품 상태:** 기획안. 구현·배포·시장 검증 완료 상태가 아님.  
+> **제품명:** RentalDesk(렌탈데스크). 2026-10-16 "RentDesk Lite"에서 변경(앱 데이터 폴더·기기 코드·라이선스·백업 식별자 포함, 이름 변경 전 백업은 복원 허용). Python 패키지명 `rentdesk`는 내부 이름이라 유지한다. 국내 판매 표기는 "렌탈데스크"를 앞세운다. 같은 이름의 해외 장비 렌탈 소프트웨어(영국 Navigator Systems "RentalDesk")가 있으므로 **출시 전 KIPRIS 제9·42류 상표 확인 필요**.
 
 ---
 
@@ -19,7 +20,7 @@
 6. **기술:** Python 3.12, PySide6(Qt Widgets), SQLite, openpyxl, pytest, PyInstaller. 같은 Python 소스코드를 사용하되 **macOS에서 `.app/.dmg`, Windows에서 `.exe` 설치 패키지**를 각각 빌드한다. macOS는 배포용 코드 서명·공증(notarization), Windows는 설치 도구 및 선택적 코드 서명 정책을 적용한다. 개발 중 호환되는 의존성 버전을 잠근다.
 7. **금액:** 모든 금액을 `INTEGER` 원(KRW)으로 저장. 부동소수점 연산 금지.
 8. **시간:** UI는 `Asia/Seoul`, DB는 UTC ISO-8601 문자열로 저장. 예약 시간 구간은 **시작 포함, 끝 제외** `[start, end)`이다.
-9. **데이터:** OS별 사용자 전용 앱 데이터 디렉터리를 Qt `QStandardPaths.AppLocalDataLocation`으로 조회하여 사용한다(예: macOS `~/Library/Application Support/RentDeskLite/`, Windows `%LOCALAPPDATA%/RentDeskLite/`). 운영체제별 절대경로를 코드에 하드코딩하지 않는다. 고객 데이터를 외부 서버로 보내지 않는다.
+9. **데이터:** OS별 사용자 전용 앱 데이터 디렉터리를 Qt `QStandardPaths.AppLocalDataLocation`으로 조회하여 사용한다(예: macOS `~/Library/Application Support/RentalDesk/`, Windows `%LOCALAPPDATA%/RentalDesk/`). 운영체제별 절대경로를 코드에 하드코딩하지 않는다. 고객 데이터를 외부 서버로 보내지 않는다.
 10. **범위 변경:** 이 문서에 없는 기능은 임의 구현하지 말고 `BACKLOG.md`에 제안한다. 불명확한 경우 본 문서 마지막의 기본값을 따른다.
 
 ## 1. 제품 개요
@@ -482,8 +483,8 @@ rentdesk-lite/
 Qt `QStandardPaths.AppLocalDataLocation`으로 기본 디렉터리를 얻는다. 실제 반환값은 앱 이름·조직 이름 설정에 따라 달라질 수 있으므로 **하드코딩하지 않는다**. 아래는 목표 경로 예시이다.
 
 ```text
-macOS: ~/Library/Application Support/RentDeskLite/
-Windows: %LOCALAPPDATA%/RentDeskLite/
+macOS: ~/Library/Application Support/RentalDesk/
+Windows: %LOCALAPPDATA%/RentalDesk/
 
 <OS-specific app data dir>/
   data/rentdesk.db
@@ -492,7 +493,7 @@ Windows: %LOCALAPPDATA%/RentDeskLite/
   license/
 ```
 
-- 앱 초기화 시 `QCoreApplication.setOrganizationName(...)`, `setApplicationName("RentDeskLite")`을 고정해 앱 데이터 경로의 안정성을 확보한다.
+- 앱 초기화 시 `QCoreApplication.setOrganizationName(...)`, `setApplicationName("RentalDesk")`을 고정해 앱 데이터 경로의 안정성을 확보한다.
 - 설치 프로그램을 제거해도 기본적으로 사용자 DB를 자동 삭제하지 않는다.
 - Mac↔Windows 백업 이동 시 아카이브에는 DB 및 플랫폼 독립 메타데이터만 넣고 절대경로·장비 고정 라이선스·로그는 제외한다.
 
@@ -535,9 +536,9 @@ Windows: %LOCALAPPDATA%/RentDeskLite/
 
 ### 11.3 실제 배포 산출물
 
-- `RentDeskLite_x.y.z_win-x64_setup.exe` (Windows 11 x64, Inno Setup 기반 설치 프로그램).
-- `RentDeskLite_x.y.z_macos-arm64.dmg` (Apple Silicon macOS 배포 이미지, `RentDeskLite.app` 포함).
-- Intel Mac(x86_64) 지원은 별도 빌드·검증 후 `RentDeskLite_x.y.z_macos-x64.dmg`를 추가한다. `universal2`는 Python과 Qt 종속성 아키텍처가 모두 호환되는 경우에만 검토한다.
+- `RentalDesk_x.y.z_win-x64_setup.exe` (Windows 11 x64, Inno Setup 기반 설치 프로그램).
+- `RentalDesk_x.y.z_macos-arm64.dmg` (Apple Silicon macOS 배포 이미지, `RentalDesk.app` 포함).
+- Intel Mac(x86_64) 지원은 별도 빌드·검증 후 `RentalDesk_x.y.z_macos-x64.dmg`를 추가한다. `universal2`는 Python과 Qt 종속성 아키텍처가 모두 호환되는 경우에만 검토한다.
 - Windows용 `.exe`는 Windows 환경에서, Mac용 `.app/.dmg`는 macOS 환경에서 별도로 생성한다.
 - Mac 판매용 빌드는 Developer ID 서명, Hardened Runtime, 공증(notarization), 검증 완료 후 배포한다. 개발·사내 시험 빌드는 판매용 빌드와 구분한다.
 - 샘플 데이터, 빠른 시작 안내서, 사용 설명서, 버전별 변경사항.

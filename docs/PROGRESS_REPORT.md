@@ -1,4 +1,4 @@
-# RentDesk Lite 개발 진행 보고서 (M0 ~ M4)
+# RentalDesk 개발 진행 보고서 (M0 ~ M4)
 
 > 기준일: 2026-10-15 · 기준 커밋: M4 `104d6ae` · 작성 환경: macOS 26.6.2 arm64(로컬 맥북)
 > 이 문서는 지금까지의 개발 내용을 한 곳에 모은 요약본이다. 다음 작업을 위한 최신 상태와 환경 재현 방법은 `docs/HANDOFF.md`, 결정 근거는 `OPEN_QUESTIONS.md`, 체크리스트는 `TASKS.md`를 기준으로 한다.
@@ -11,7 +11,7 @@
 | 진행 단계 | M0~M3 완료, **M4 코드·macOS 로컬 빌드 완료**(배포 서명·Windows 빌드·실기기 검증 남음), M5 미착수 |
 | 자동 테스트 | **387 passed** (macOS arm64 로컬). 테스트 파일 26개 |
 | 소스 규모 | `src/` Python 약 10,100줄 |
-| macOS 산출물 | `RentDeskLite_0.1.0_macos-arm64.dmg`(41MB) 로컬 빌드 성공 — **ad-hoc 서명, 공증 전, 판매 불가** |
+| macOS 산출물 | `RentalDesk_0.1.0_macos-arm64.dmg`(41MB) 로컬 빌드 성공 — **ad-hoc 서명, 공증 전, 판매 불가** |
 | Windows 산출물 | 빌드 스크립트·CI 잡만 작성. **Windows에서 한 번도 빌드하지 않음** |
 | 공식 지원 표기 | 아직 불가(CLAUDE.md: 양 플랫폼 출시 게이트 통과 전 "공식 지원" 주장 금지) |
 
@@ -21,7 +21,7 @@
 - 계층: `domain`(순수 함수: 가용성·요금·정산·표시 형식) → `persistence`(스키마·마이그레이션·트랜잭션·리포지토리) → `services`(검증·트랜잭션·정책) → `ui`(화면, SQL·계산 없음)
 - OS 의존 코드는 `platform/`(경로, 기기 ID, 환경, 단일 인스턴스 잠금, 기기별 설정)에만 둔다.
 - 시간: DB는 UTC `YYYY-MM-DDTHH:MM:SSZ`, 화면은 Asia/Seoul, 예약 구간 `[start, end)`. 금액: KRW 정수.
-- 사용자 데이터: macOS `~/Library/Application Support/RentDeskLite/`, Windows `%LOCALAPPDATA%\RentDeskLite\` (`data/`, `backups/`, `logs/`, `license/`, `demo/`, `preferences.json`)
+- 사용자 데이터: macOS `~/Library/Application Support/RentalDesk/`, Windows `%LOCALAPPDATA%\RentalDesk\` (`data/`, `backups/`, `logs/`, `license/`, `demo/`, `preferences.json`)
 
 ## 3. 마일스톤별 진행 내용
 
@@ -52,7 +52,7 @@
 - **백업/복원**: Online Backup API 스냅샷 → ZIP(`manifest.json` + `rentdesk.db`). 복원 전 7단계 검증(ZIP 구조·manifest·크기·SHA-256·무결성·스키마·건수/합계 대조), 현재 DB 보호 백업, 교체 실패 시 원복, 복원 후 화면 재시작. 백업에 절대경로·라이선스·로그 미포함. 7일 백업 권장 안내.
 - **라이선스**: Ed25519 서명 파일, 20자 기기 코드(원본 식별자 역산 불가). 판매자 발급 스크립트 `scripts/generate_license.py`(개인키는 저장소 밖 `~/RentDeskSellerKeys/`). 라이선스 실패 시 예제 모드·실제 데이터 백업만 허용, 실데이터 무변경.
 - **무결성**: DB를 열 때마다 `integrity_check`, 손상 시 마이그레이션하지 않고 백업 복원 안내(손상 파일 보관).
-- **경로**: `RentDeskLite/RentDeskLite` 중복 해소, macOS 앱 데이터 폴더 권한 700.
+- **경로**: `RentalDesk/RentalDesk` 중복 해소, macOS 앱 데이터 폴더 권한 700.
 - **패키징**: PyInstaller spec(onedir), macOS 서명·DMG·공증 스크립트, Windows Inno Setup·PowerShell 빌드/스모크 스크립트, `--self-check` 자기 점검 모드, CI 패키징 잡.
 - **문서**: `docs/install_macos.md`, `docs/install_windows.md`, `docs/license_operations.md`.
 
@@ -115,7 +115,7 @@ DB 마이그레이션 누계: `001_initial`(M1), `002_checkout_note`(M2). M3·M4
 | 항목 | 영향 |
 |---|---|
 | Apple Developer 계정·Developer ID Application 인증서 | 없으면 macOS 판매용 서명·공증 불가 |
-| 정식 번들 ID(현재 임시 `com.example.rentdesklite`) | 출시 후 변경 어려움 |
+| 정식 번들 ID(현재 임시 `com.example.rentaldesk`) | 출시 후 변경 어려움 |
 | 라이선스 이전·재발급 약관(횟수, 동시 사용) | `docs/license_operations.md`에 가설로만 기재 |
 | 고객 목록 엑셀 출력 포함 여부 | 개인정보 최소화 원칙으로 P0에서 제외해 둠 |
 

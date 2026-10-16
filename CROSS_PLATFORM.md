@@ -1,4 +1,4 @@
-# RentDesk Lite — macOS 개발 · macOS/Windows 이중 배포 명세
+# RentalDesk — macOS 개발 · macOS/Windows 이중 배포 명세
 
 > **문서 버전:** 1.1 / **기준일:** 2026-10-15  
 > **프로젝트 공식 결정:** 개발은 맥북에서, 판매용은 **macOS Apple Silicon(arm64)** 및 **Windows 11(x64)** 설치형 패키지로 별도 빌드한다. 같은 Git 커밋과 공통 도메인 로직을 사용한다.  
@@ -56,9 +56,9 @@ rentdesk-lite/
     pyinstaller/rentdesk.spec
     macos/create_dmg.sh
     macos/notarize.sh
-    macos/RentDeskLite.icns
+    macos/RentalDesk.icns
     windows/rentdesk.iss
-    windows/RentDeskLite.ico
+    windows/RentalDesk.ico
   .github/workflows/ci.yml
   docs/
     install_macos.md
@@ -107,7 +107,7 @@ Windows PowerShell 명령 예시 (`pyproject.toml`과 패키지가 생성된 뒤
 py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 .\.venv\Scripts\python.exe -m pytest -q
-.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --windowed --onedir --paths src --name RentDeskLite launcher.py
+.\.venv\Scripts\python.exe -m PyInstaller --noconfirm --clean --windowed --onedir --paths src --name RentalDesk launcher.py
 # 위 단계 후 패키징 스크립트에서 Inno Setup 실행
 ```
 
@@ -116,9 +116,9 @@ macOS 터미널에서의 초기 개발 빌드 예시 (배포용 서명 전):
 ```bash
 source .venv/bin/activate
 python -m PyInstaller --noconfirm --clean --windowed --onedir \
-  --name RentDeskLite --osx-bundle-identifier com.example.rentdesklite \
+  --name RentalDesk --osx-bundle-identifier com.example.rentaldesk \
   --paths src launcher.py
-# com.example.rentdesklite 는 임시값. 실제 배포 전에 고유 bundle identifier를 확정.
+# com.example.rentaldesk 는 임시값. 실제 배포 전에 고유 bundle identifier를 확정.
 ```
 
 - `launcher.py`는 상대 import 문제를 피하는 얇은 진입점으로 생성한다. 예: `from rentdesk.app import main; raise SystemExit(main())`.
@@ -148,7 +148,7 @@ db_file = app_data_dir / "data" / "rentdesk.db"
 
 | 데이터 종류 | macOS 예시 | Windows 예시 |
 |---|---|---|
-| 앱 데이터 | `~/Library/Application Support/RentDeskLite/` | `%LOCALAPPDATA%/RentDeskLite/` |
+| 앱 데이터 | `~/Library/Application Support/RentalDesk/` | `%LOCALAPPDATA%/RentalDesk/` |
 | DB | `<app_data>/data/rentdesk.db` | 동일 상대경로 |
 | 로그 | `<app_data>/logs/` | 동일 상대경로 |
 | 라이선스 | `<app_data>/license/` | 동일 상대경로 |
@@ -184,7 +184,7 @@ db_file = app_data_dir / "data" / "rentdesk.db"
 
 ### macOS 배포용 필수 단계
 
-1. 맥에서 PyInstaller로 `RentDeskLite.app` 생성.
+1. 맥에서 PyInstaller로 `RentalDesk.app` 생성.
 2. 앱 번들 내 실행파일/라이브러리·Qt 플러그인이 배포용 서명에 문제없는지 확인.
 3. Apple Developer Program의 **Developer ID Application** 인증서로 앱에 **Hardened Runtime** 및 필요한 entitlements 설정 후 코드 서명.
 4. 배포용 `.dmg`를 구성하고 Apple 공증 서비스에 `xcrun notarytool` 등 공식 도구로 제출.
@@ -196,7 +196,7 @@ Apple 서명/공증은 **개발 시 매번 필요하지 않지만 외부 판매�
 ### Windows 배포용 필수 단계
 
 1. Windows에서 PyInstaller `onedir` 출력 생성, 필요한 Qt DLL 및 플러그인 확인.
-2. Inno Setup 등 설치도구로 `RentDeskLite_x.y.z_win-x64_setup.exe` 생성.
+2. Inno Setup 등 설치도구로 `RentalDesk_x.y.z_win-x64_setup.exe` 생성.
 3. 가능하면 Authenticode 코드 서명 수행; 미서명 배포 시 SmartScreen 경고 및 사용자 신뢰·유지보수 이슈를 평가.
 4. Python 없는 Windows 11 x64 환경에서 설치·첫 실행·DB 경로·예약/반납/정산·복원·업데이트·제거 확인.
 5. 제거 프로그램은 기본적으로 고객 데이터베이스를 자동 삭제하지 않으며, 완전 삭제가 필요할 때에는 별도 안내와 명시적 동의를 받는다.
@@ -204,10 +204,10 @@ Apple 서명/공증은 **개발 시 매번 필요하지 않지만 외부 판매�
 ### 릴리스 명명 규칙
 
 ```text
-RentDeskLite_1.0.0_macos-arm64.dmg
-RentDeskLite_1.0.0_win-x64_setup.exe
+RentalDesk_1.0.0_macos-arm64.dmg
+RentalDesk_1.0.0_win-x64_setup.exe
 # 추가 검증한 경우만:
-RentDeskLite_1.0.0_macos-x64.dmg
+RentalDesk_1.0.0_macos-x64.dmg
 ```
 
 ## I. 필수 테스트 및 릴리스 체크리스트

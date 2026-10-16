@@ -264,7 +264,7 @@ def recover_corrupt_database(paths: AppPaths, message: str) -> sqlite3.Connectio
 
 
     while True:
-        box = QMessageBox(QMessageBox.Icon.Critical, "RentDesk Lite", message)
+        box = QMessageBox(QMessageBox.Icon.Critical, "RentalDesk", message)
         restore_btn = box.addButton("백업 파일에서 복원…", QMessageBox.ButtonRole.AcceptRole)
         box.addButton("종료", QMessageBox.ButtonRole.RejectRole)
         box.exec()
@@ -361,13 +361,13 @@ def main(argv: list[str] | None = None) -> int:
         lock = InstanceLock(platform_paths.get_lock_path())
         if not lock.acquire():
             QMessageBox.information(
-                None, "RentDesk Lite",
-                "RentDesk Lite가 이미 실행 중입니다. 열려 있는 창을 사용해주세요.",
+                None, "RentalDesk",
+                "RentalDesk가 이미 실행 중입니다. 열려 있는 창을 사용해주세요.",
             )
             return 0
         paths = AppPaths.from_platform()
     except AppDataUnavailableError as exc:
-        QMessageBox.critical(None, "RentDesk Lite", str(exc))
+        QMessageBox.critical(None, "RentalDesk", str(exc))
         return 1
 
     try:
@@ -379,13 +379,13 @@ def main(argv: list[str] | None = None) -> int:
             if conn is None:
                 return 1
         except (AppDataUnavailableError, DatabaseError) as exc:
-            QMessageBox.critical(None, "RentDesk Lite", str(exc))
+            QMessageBox.critical(None, "RentalDesk", str(exc))
             return 1
         except (sqlite3.Error, OSError):
             log.exception("database open failed")
             QMessageBox.critical(
                 None,
-                "RentDesk Lite",
+                "RentalDesk",
                 "데이터 파일을 열 수 없습니다. 저장 위치의 접근 권한과 남은 용량을 확인해주세요.",
             )
             return 1

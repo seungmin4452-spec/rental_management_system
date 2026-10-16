@@ -1,8 +1,8 @@
-﻿# 빌드/설치된 RentDeskLite.exe 구동 검증: 자기 점검 + 번들 안 비밀정보/DB 미포함 확인.
+﻿# 빌드/설치된 RentalDesk.exe 구동 검증: 자기 점검 + 번들 안 비밀정보/DB 미포함 확인.
 # 사용자 데이터 폴더를 건드리지 않는다(자기 점검은 임시 폴더에서만 동작).
-#   scripts\smoke_windows.ps1 -Exe "dist\RentDeskLite\RentDeskLite.exe"
-#   scripts\smoke_windows.ps1 -Exe "$env:LOCALAPPDATA\Programs\RentDesk Lite\RentDeskLite.exe"
-param([string]$Exe = "dist\RentDeskLite\RentDeskLite.exe")
+#   scripts\smoke_windows.ps1 -Exe "dist\RentalDesk\RentalDesk.exe"
+#   scripts\smoke_windows.ps1 -Exe "$env:LOCALAPPDATA\Programs\RentalDesk\RentalDesk.exe"
+param([string]$Exe = "dist\RentalDesk\RentalDesk.exe")
 $ErrorActionPreference = "Stop"
 if (-not (Test-Path $Exe)) { throw "실행 파일 없음: $Exe" }
 

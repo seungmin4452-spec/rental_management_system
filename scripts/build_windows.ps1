@@ -26,17 +26,17 @@ if ($env:SKIP_TESTS -ne "1") {
     Remove-Item Env:QT_QPA_PLATFORM
 }
 
-Remove-Item -Recurse -Force build\pyinstaller, dist\RentDeskLite -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force build\pyinstaller, dist\RentalDesk -ErrorAction SilentlyContinue
 & $Python -m PyInstaller --noconfirm --clean --workpath build\pyinstaller --distpath dist packaging\pyinstaller\rentdesk.spec
 if ($LASTEXITCODE -ne 0) { throw "PyInstaller 실패" }
 
-& (Join-Path $PSScriptRoot "smoke_windows.ps1") -Exe "dist\RentDeskLite\RentDeskLite.exe"
+& (Join-Path $PSScriptRoot "smoke_windows.ps1") -Exe "dist\RentalDesk\RentalDesk.exe"
 
 $Iscc = if ($env:ISCC) { $env:ISCC } else { "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
 if (-not (Test-Path $Iscc)) { throw "Inno Setup 6(ISCC.exe)을 찾을 수 없습니다: $Iscc" }
-& $Iscc "/DAppVersion=$Version" "/DSourceDir=$(Resolve-Path dist\RentDeskLite)" "/DOutputDir=$(Resolve-Path dist)" packaging\windows\rentdesk.iss
+& $Iscc "/DAppVersion=$Version" "/DSourceDir=$(Resolve-Path dist\RentalDesk)" "/DOutputDir=$(Resolve-Path dist)" packaging\windows\rentdesk.iss
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup 실패" }
 
-$Setup = "dist\RentDeskLite_${Version}_win-x64_setup.exe"
+$Setup = "dist\RentalDesk_${Version}_win-x64_setup.exe"
 Get-FileHash -Algorithm SHA256 $Setup | Format-List
 Write-Host "== Windows 설치파일 생성: $Setup (Authenticode 미서명 시 SmartScreen 경고 가능)"

@@ -56,7 +56,7 @@ STATUS_MESSAGES = {
     LicenseStatus.MISSING: "등록된 라이선스가 없습니다. 판매자에게 받은 라이선스 파일을 불러와주세요.",
     LicenseStatus.MALFORMED: "라이선스 파일 형식이 올바르지 않습니다. 판매자에게 받은 파일이 맞는지 확인해주세요.",
     LicenseStatus.BAD_SIGNATURE: "라이선스 파일이 변경되었거나 정식 발급 파일이 아닙니다.",
-    LicenseStatus.WRONG_PRODUCT: "RentDesk Lite용 라이선스 파일이 아닙니다.",
+    LicenseStatus.WRONG_PRODUCT: "RentalDesk용 라이선스 파일이 아닙니다.",
     LicenseStatus.WRONG_DEVICE: (
         "이 라이선스는 다른 PC용으로 발급되었습니다. PC·운영체제를 바꾸었다면 아래 기기 코드를 "
         "판매자에게 보내 사용권 이전(재발급)을 요청해주세요."

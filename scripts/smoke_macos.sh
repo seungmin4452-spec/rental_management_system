@@ -2,8 +2,8 @@
 # 빌드된 .app 구동 검증: 자기 점검 실행 + 서명 확인 + 번들 안 비밀정보/DB 미포함 확인.
 # 사용자 데이터 폴더를 건드리지 않는다(자기 점검은 임시 폴더에서만 동작).
 set -euo pipefail
-APP="${1:-dist/RentDeskLite.app}"
-BIN="$APP/Contents/MacOS/RentDeskLite"
+APP="${1:-dist/RentalDesk.app}"
+BIN="$APP/Contents/MacOS/RentalDesk"
 OUT="$(mktemp -d)/selfcheck.json"
 
 [[ -x "$BIN" ]] || { echo "실행 파일 없음: $BIN"; exit 1; }
