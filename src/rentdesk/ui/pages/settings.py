@@ -1,4 +1,4 @@
-"""S-09 설정: 운영 정책, 사업자 정보, 백업/복원, 라이선스, 예제 데이터 모드."""
+"""S-09 설정: 운영 정책, 사업자 정보, 백업/복원, 라이선스, 화면 크기, 예제 데이터 모드."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ from pathlib import Path
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -20,9 +22,12 @@ from PySide6.QtWidgets import (
 )
 
 from rentdesk.domain.display import format_dt
+from rentdesk.platform import paths as platform_paths
+from rentdesk.services import auto_backup
+from rentdesk.services.auto_backup import AutoBackupSettings
 from rentdesk.services.backup import UNENCRYPTED_NOTICE, BackupResult, ValidatedBackup
 from rentdesk.services.settings import MAX_MINUTES
-from rentdesk.ui import feedback, theme
+from rentdesk.ui import display_scale, feedback, theme
 from rentdesk.ui.backup_actions import (
     choose_backup_file,
     confirm_restore,
@@ -30,8 +35,17 @@ from rentdesk.ui.backup_actions import (
     export_backup,
     save_backup_dialog,
 )
+from rentdesk.ui.dialogs.about_dialog import open_folder
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import FormErrors, button_row
+
+FIELD_WIDTH = 220
+
+
+def _auto_backup_dir() -> Path:
+    folder = platform_paths.get_default_backup_dir() / "auto"
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder  # 숫자·짧은 입력칸이 화면 폭 전체로 늘어나지 않게
 
 
 class SettingsPage(Page):
@@ -52,12 +66,15 @@ class SettingsPage(Page):
         self.multiplier.setRange(0, 100)
         self.multiplier.setDecimals(2)
         self.multiplier.setSingleStep(0.5)
+        self.multiplier.setSuffix("배")
         self.buffer = QSpinBox()
         self.buffer.setRange(0, MAX_MINUTES)
         self.buffer.setSuffix("분")
-        self.policy_errors.add_row("연체 유예시간", self.grace, "grace_minutes")
-        self.policy_errors.add_row("연체 배수", self.multiplier, "late_multiplier")
-        self.policy_errors.add_row("정비·대여 전환 버퍼", self.buffer, "turnaround_buffer_minutes")
+        for spin in (self.grace, self.multiplier, self.buffer):
+            spin.setMaximumWidth(FIELD_WIDTH)
+        self.policy_errors.add_row("연체료 없이 기다려 주는 시간", self.grace, "grace_minutes")
+        self.policy_errors.add_row("연체 1일당 일 대여료의", self.multiplier, "late_multiplier")
+        self.policy_errors.add_row("반납 후 다음 대여까지 준비 시간", self.buffer, "turnaround_buffer_minutes")
         save_policy = theme.set_variant(QPushButton("정책 저장"), "primary")
         save_policy.clicked.connect(self.save_policy)
         pf.addRow(button_row(save_policy))
@@ -69,6 +86,8 @@ class SettingsPage(Page):
         self.biz_name.setMaxLength(100)
         self.biz_phone = QLineEdit()
         self.biz_phone.setMaxLength(30)
+        self.biz_name.setMaximumWidth(FIELD_WIDTH * 2)
+        self.biz_phone.setMaximumWidth(FIELD_WIDTH)
         self.biz_errors.add_row("상호", self.biz_name, "business_name")
         self.biz_errors.add_row("전화번호", self.biz_phone, "business_phone")
         save_biz = theme.set_variant(QPushButton("사업자 정보 저장"), "primary")
@@ -98,6 +117,23 @@ class SettingsPage(Page):
         bl.addWidget(notice)
         bl.addLayout(bform)
         bl.addLayout(button_row(self.backup_dir_btn, self.backup_btn, self.restore_btn))
+        self.auto_enabled = QCheckBox(
+            f"프로그램을 끌 때 자동 백업 (하루 1개, 최근 {auto_backup.KEEP}개 보관)"
+        )
+        self.auto_enabled.toggled.connect(self._set_auto_enabled)
+        self.auto_copy = QCheckBox("자동 백업을 기본 백업 폴더(USB 등)에도 복사")
+        self.auto_copy.toggled.connect(self._set_auto_copy)
+        self.auto_note = QLabel()
+        self.auto_note.setWordWrap(True)
+        theme.set_tone(self.auto_note, "muted")
+        self.auto_open_btn = QPushButton("자동 백업 폴더 열기")
+        self.auto_open_btn.clicked.connect(
+            lambda: open_folder(self, _auto_backup_dir)
+        )
+        bl.addWidget(self.auto_enabled)
+        bl.addWidget(self.auto_copy)
+        bl.addWidget(self.auto_note)
+        bl.addLayout(button_row(self.auto_open_btn))
 
         self.license_panel = None
         license_box = None
@@ -108,6 +144,21 @@ class SettingsPage(Page):
             ll = QVBoxLayout(license_box)
             self.license_panel = LicensePanel(self.ctx.license, license_box)
             ll.addWidget(self.license_panel)
+
+        scale_box = QGroupBox("화면 크기")
+        sl = QFormLayout(scale_box)
+        self.scale = QComboBox()
+        self.scale.setMaximumWidth(FIELD_WIDTH)
+        for choice in (display_scale.AUTO, *display_scale.MANUAL_CHOICES):
+            self.scale.addItem(display_scale.choice_label(choice), choice)
+        self.scale_note = QLabel()
+        self.scale_note.setWordWrap(True)
+        theme.set_tone(self.scale_note, "muted")
+        save_scale = QPushButton("화면 크기 저장")
+        save_scale.clicked.connect(self.save_scale)
+        sl.addRow("배율", self.scale)
+        sl.addRow(self.scale_note)
+        sl.addRow(button_row(save_scale))
 
         demo_box = QGroupBox("예제 데이터 모드")
         dl = QVBoxLayout(demo_box)
@@ -125,6 +176,7 @@ class SettingsPage(Page):
         lay.addWidget(backup_box)
         if license_box is not None:
             lay.addWidget(license_box)
+        lay.addWidget(scale_box)
         lay.addWidget(demo_box)
         lay.addStretch(1)
         scroll = QScrollArea()
@@ -144,6 +196,7 @@ class SettingsPage(Page):
         self.biz_name.setText(b.name)
         self.biz_phone.setText(b.phone)
         self._refresh_backup()
+        self._refresh_scale()
         if self.license_panel is not None:
             self.license_panel.refresh()
         if self.ctx.is_demo:
@@ -162,7 +215,8 @@ class SettingsPage(Page):
     def save_policy(self) -> bool:
         self.policy_errors.clear()
         multiplier = f"{self.multiplier.value():.2f}"
-        text = (f"유예 {self.grace.value()}분, 연체 배수 {multiplier}, 전환 버퍼 {self.buffer.value()}분으로 "
+        text = (f"연체료 없이 기다려 주는 시간 {self.grace.value()}분, 연체 1일당 일 대여료의 {multiplier}배, "
+                f"반납 후 준비 시간 {self.buffer.value()}분으로 "
                 "변경합니다.\n이미 확정된 예약에는 소급 적용되지 않습니다.")
         if not feedback.confirm(self, text, "정책 변경 확인"):
             return False
@@ -186,6 +240,30 @@ class SettingsPage(Page):
         feedback.info(self, "사업자 정보를 저장했습니다.")
         return True
 
+    # ------------------------------------------------------------------ 화면 크기
+
+    def _refresh_scale(self) -> None:
+        prefs = self.ctx.preferences
+        choice = display_scale.normalize_choice(prefs.get(display_scale.PREF_KEY) if prefs else None)
+        self.scale.setCurrentIndex(max(0, self.scale.findData(choice)))
+        self.scale.setEnabled(prefs is not None)
+        self.scale_note.setText(
+            f"지금 프로그램 배율: {round(display_scale.current_factor() * 100)}% (Windows·macOS 화면 배율과 별도). "
+            "자동은 창이 화면에 다 들어가도록 필요할 때만 줄입니다. "
+            "글자가 작거나 크면 직접 고르세요. 프로그램을 다시 시작하면 적용됩니다."
+        )
+
+    def save_scale(self) -> bool:
+        prefs = self.ctx.preferences
+        if prefs is None:
+            return False
+        choice = self.scale.currentData()
+        if feedback.run(self, lambda: prefs.set(display_scale.PREF_KEY, choice) or True) is None:
+            return False
+        feedback.info(self, f"화면 크기를 '{display_scale.choice_label(choice)}'(으)로 저장했습니다.\n"
+                            "프로그램을 다시 시작하면 적용됩니다.")
+        return True
+
     # ------------------------------------------------------------------ 백업/복원
 
     def _refresh_backup(self) -> None:
@@ -197,6 +275,41 @@ class SettingsPage(Page):
         else:
             self.last_backup_label.setText(format_dt(self.ctx.backup.last_backup_at(), "아직 없음"))
         self.backup_dir_label.setText(str(default_backup_folder(self.ctx.preferences)))
+        self._refresh_auto_backup()
+
+    def _refresh_auto_backup(self) -> None:
+        prefs = self.ctx.preferences
+        usable = prefs is not None and not self.ctx.is_demo
+        settings = AutoBackupSettings(prefs) if prefs is not None else None
+        for box, value in ((self.auto_enabled, settings.enabled if settings else False),
+                           (self.auto_copy, settings.copy_to_backup_dir if settings else False)):
+            box.blockSignals(True)
+            box.setChecked(value)
+            box.blockSignals(False)
+        self.auto_enabled.setEnabled(usable)
+        self.auto_open_btn.setEnabled(usable)
+        has_dir = prefs is not None and prefs.get("backup_dir") not in (None, "")
+        self.auto_copy.setEnabled(usable and self.auto_enabled.isChecked() and has_dir)
+        if self.ctx.is_demo:
+            note = "예제 데이터 모드에서는 자동 백업을 만들지 않습니다."
+        else:
+            last = settings.last_at() if settings else None
+            note = (f"마지막 자동 백업: {format_dt(last)}" if last else "아직 자동 백업이 없습니다.")
+            note += (" 자동 백업은 이 PC 안에 저장되므로 PC 고장·분실에 대비하려면 "
+                     "USB 등 다른 곳에 백업 파일을 따로 보관하세요.")
+            if not has_dir:
+                note += " (USB 등으로 복사하려면 먼저 '기본 폴더 변경…'으로 폴더를 고르세요.)"
+        self.auto_note.setText(note)
+
+    def _set_auto_enabled(self, on: bool) -> None:
+        if self.ctx.preferences is not None:
+            feedback.run(self, lambda: AutoBackupSettings(self.ctx.preferences).set_enabled(on))
+        self._refresh_auto_backup()
+
+    def _set_auto_copy(self, on: bool) -> None:
+        if self.ctx.preferences is not None:
+            feedback.run(self, lambda: AutoBackupSettings(self.ctx.preferences).set_copy_to_backup_dir(on))
+        self._refresh_auto_backup()
 
     def choose_backup_dir(self) -> None:
         if self.ctx.preferences is None:

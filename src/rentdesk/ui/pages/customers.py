@@ -27,20 +27,20 @@ class CustomersPage(Page):
         self.query.setPlaceholderText("고객명·전화번호·이메일 검색")
         self.query.setClearButtonEnabled(True)
         self.query.textChanged.connect(self.refresh)
-        self.include_archived = QCheckBox("보관 고객 포함")
+        self.include_archived = QCheckBox("숨긴 고객 포함")
         self.include_archived.toggled.connect(self.refresh)
         filters = QHBoxLayout()
         filters.addWidget(self.query, 1)
         filters.addWidget(self.include_archived)
 
-        self.table = DataTable(["고객명/업체명", "구분", "전화번호", "이메일", "보관"])
+        self.table = DataTable(["고객명/업체명", "구분", "전화번호", "이메일", "숨김"])
         self.table.activated_key.connect(lambda key: self.open_customer(int(key)))
         self.table.itemSelectionChanged.connect(self._update_buttons)
         self.empty = empty_hint("등록된 고객이 없습니다.", "고객 등록", self.create)
 
         self.new_btn = theme.set_variant(QPushButton("고객 등록"), "primary")
         self.edit_btn = QPushButton("수정")
-        self.archive_btn = QPushButton("보관 처리")
+        self.archive_btn = QPushButton("거래 중지(숨김)")
         self.delete_btn = theme.set_variant(QPushButton("삭제"), "danger")
         self.reserve_btn = QPushButton("새 예약")
         self.orders_btn = QPushButton("예약 보기")
@@ -75,7 +75,7 @@ class CustomersPage(Page):
         }
         self.table.set_rows([
             (c.id, [c.name, CUSTOMER_TYPE_LABELS[c.customer_type], c.phone or "", c.email or "",
-                    "보관" if c.is_archived else ""])
+                    "숨김" if c.is_archived else ""])
             for c in self.customers.values()
         ])
         self.empty.setVisible(not self.customers and not self.query.text().strip())
@@ -97,7 +97,7 @@ class CustomersPage(Page):
         for b in (self.edit_btn, self.archive_btn, self.delete_btn, self.reserve_btn, self.orders_btn):
             b.setEnabled(c is not None)
         self.reserve_btn.setEnabled(c is not None and not c.is_archived)
-        self.archive_btn.setText("보관 해제" if c is not None and c.is_archived else "보관 처리")
+        self.archive_btn.setText("숨김 해제" if c is not None and c.is_archived else "거래 중지(숨김)")
 
     def open_customer(self, customer_id: int) -> None:
         customer = self.ctx.customers.get_customer(customer_id)
@@ -114,9 +114,9 @@ class CustomersPage(Page):
     def toggle_archive(self) -> None:
         def run(c: Customer) -> None:
             archived = not c.is_archived
-            text = (f"{c.name} 고객을 보관합니다. 기존 예약 이력은 유지되고 신규 예약 대상에서 제외됩니다."
-                    if archived else f"{c.name} 고객의 보관을 해제합니다.")
-            if feedback.confirm(self, text, "고객 보관") and feedback.run(
+            text = (f"{c.name} 고객을 거래 중지(숨김)합니다. 기존 예약 이력은 유지되고 신규 예약 대상에서 제외됩니다."
+                    if archived else f"{c.name} 고객의 숨김을 해제합니다.")
+            if feedback.confirm(self, text, "고객 숨김") and feedback.run(
                 self, lambda: self.ctx.customers.set_archived(c.id, archived)
             ):
                 self.nav.data_changed()

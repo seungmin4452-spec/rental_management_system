@@ -151,7 +151,7 @@ ASSET_STATE_LABELS = {
     AssetState.RENTED: "대여 중",
     AssetState.OVERDUE: "연체",
     AssetState.MAINTENANCE: "정비 중",
-    AssetState.RETIRED: "은퇴",
+    AssetState.RETIRED: "사용 중지",
 }
 
 

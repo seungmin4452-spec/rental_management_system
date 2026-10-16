@@ -30,6 +30,7 @@ datas = [
      "rentdesk/persistence/migrations"),
     (str(ROOT / "src" / "rentdesk" / "resources" / "icons" / "*.png"), "rentdesk/resources/icons"),
     (str(ROOT / "src" / "rentdesk" / "resources" / "icons" / "*.svg"), "rentdesk/resources/icons"),
+    (str(ROOT / "src" / "rentdesk" / "resources" / "support" / "support.json"), "rentdesk/resources/support"),
 ]
 
 a = Analysis(  # noqa: F821

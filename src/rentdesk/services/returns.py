@@ -85,14 +85,14 @@ def _late_preview(order: RentalOrder, item: RentalItem, returned_at: datetime) -
     )
     head = (
         f"약정 반납 {format_seoul(order.due_at)}, 실제 반납 {format_seoul(returned_at)}, "
-        f"유예 {item.grace_minutes_snapshot}분"
+        f"연체료 없이 기다려 주는 시간 {item.grace_minutes_snapshot}분"
     )
     if fee.late_days == 0:
         basis = f"{head} → 연체 없음"
     else:
         basis = (
-            f"{head} → 연체 {fee.late_days}일 × {item.daily_rate_snapshot_won:,}원"
-            f" × 배수 {item.late_multiplier_snapshot} = {fee.late_fee_won:,}원"
+            f"{head} → 연체 {fee.late_days}일 × 일 대여료 {item.daily_rate_snapshot_won:,}원"
+            f" × {item.late_multiplier_snapshot}배 = {fee.late_fee_won:,}원"
         )
     return LateFeePreview(
         item_id=item.id, asset_code=item.asset_code, due_at=order.due_at,

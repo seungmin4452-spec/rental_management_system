@@ -25,8 +25,45 @@ from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
 from rentdesk.services.common import Clock, clean_optional, current_time, default_clock
 
-# 출고 전 수금/예약금은 P0 범위 밖(PRD 6.1). 출고 이후 주문만 금전 거래를 받는다.
-MONEY_ALLOWED_STATUSES = frozenset({OrderStatus.IN_RENTAL, OrderStatus.COMPLETED})
+# 상태별로 기록할 수 있는 금전 거래 (USABILITY_PLAN U5: 출고 전 선입금, 취소 후 환급·수수료).
+# 임시 저장(DRAFT)은 장비를 확보하지 않았으므로 돈을 받지 않는다.
+MONEY_KINDS_BY_STATUS: dict[OrderStatus, frozenset[MoneyKind]] = {
+    OrderStatus.CONFIRMED: frozenset({
+        MoneyKind.RENTAL_RECEIPT, MoneyKind.RENTAL_REFUND, MoneyKind.DEPOSIT_IN, MoneyKind.DEPOSIT_OUT,
+    }),
+    OrderStatus.IN_RENTAL: frozenset(MoneyKind),
+    OrderStatus.COMPLETED: frozenset(MoneyKind),
+    OrderStatus.CANCELED: frozenset({
+        MoneyKind.RENTAL_RECEIPT, MoneyKind.RENTAL_REFUND, MoneyKind.DEPOSIT_OUT,
+        MoneyKind.DEPOSIT_APPLIED, MoneyKind.DEPOSIT_APPLICATION_REVERSAL,
+    }),
+}
+MONEY_ALLOWED_STATUSES = frozenset(MONEY_KINDS_BY_STATUS)
+# 정산 대상: 출고 이후 + 취소(돈이 오간 경우). 출고 전 선입금은 아직 정산 대상이 아니다.
+SETTLEMENT_STATUSES = frozenset({OrderStatus.IN_RENTAL, OrderStatus.COMPLETED, OrderStatus.CANCELED})
+# '정산 마무리'를 쓸 수 있는 상태(더 이상 청구가 생기지 않음)
+FINAL_STATUSES = frozenset({OrderStatus.COMPLETED, OrderStatus.CANCELED})
+
+_NOT_ALLOWED_MESSAGES = {
+    OrderStatus.DRAFT: "임시 저장 예약에는 돈을 기록할 수 없습니다. 예약을 확정한 뒤 기록해주세요.",
+    OrderStatus.CONFIRMED: "출고 전에는 대여료 선입금·보증금 수령과 그 환급·반환만 기록할 수 있습니다.",
+    OrderStatus.CANCELED: "취소된 예약에는 환급·보증금 반환·보증금에서 차감·수수료 수금만 기록할 수 있습니다.",
+}
+
+
+def allowed_money_kinds(status: OrderStatus) -> frozenset[MoneyKind]:
+    return MONEY_KINDS_BY_STATUS.get(status, frozenset())
+
+
+def check_money_allowed(order: RentalOrder, kind: MoneyKind) -> None:
+    if kind not in allowed_money_kinds(order.status):
+        raise InvalidStateError(
+            _NOT_ALLOWED_MESSAGES.get(order.status, "이 예약에는 이 거래를 기록할 수 없습니다.")
+        )
+
+
+def has_ledger_activity(summary: st.SettlementSummary) -> bool:
+    return summary != st.SettlementSummary()
 
 
 @dataclass(frozen=True)
@@ -81,7 +118,7 @@ def _clean_money_input(data: MoneyInput) -> MoneyInput:
             raise ValidationError("payment_method", "결제수단이 올바르지 않습니다.") from None
         if kind in st.INTERNAL_KINDS:
             raise ValidationError(
-                "payment_method", "보증금 충당/충당 취소는 결제수단을 기록하지 않습니다."
+                "payment_method", "보증금 차감/차감 취소는 결제수단을 기록하지 않습니다."
             )
     related = data.related_entry_id
     if related is not None and (isinstance(related, bool) or not isinstance(related, int)):
@@ -100,8 +137,7 @@ def record_in_txn(
 ) -> int:
     """호출자의 트랜잭션 안에서 금전 거래 1건을 검증·기록(출고 처리에서도 재사용)."""
     clean = _clean_money_input(data)
-    if order.status not in MONEY_ALLOWED_STATUSES:
-        raise InvalidStateError("출고 이후의 예약에만 수금·보증금 거래를 기록할 수 있습니다.")
+    check_money_allowed(order, clean.kind)
     related = None
     if clean.related_entry_id is not None:
         original = repo.get_money_entry(conn, clean.related_entry_id)
@@ -149,8 +185,7 @@ class SettlementService:
         """저장 전 미리보기: 검증 후 반영 결과를 돌려준다(원장 변경 없음)."""
         order = self._get_order(order_id)
         clean = _clean_money_input(data)
-        if order.status not in MONEY_ALLOWED_STATUSES:
-            raise InvalidStateError("출고 이후의 예약에만 수금·보증금 거래를 기록할 수 있습니다.")
+        check_money_allowed(order, clean.kind)
         summary = load_summary(self._conn, order_id)
         amount = st.validate_money_entry(summary, clean.kind, clean.amount_won)
         return st.apply_money(summary, clean.kind, amount)
@@ -162,9 +197,50 @@ class SettlementService:
             entry_id = record_in_txn(self._conn, order, data, now)
         return repo.get_money_entry(self._conn, entry_id)
 
+    def final_plan(self, order_id: int) -> st.FinalSettlementPlan:
+        """반납 완료·취소 예약의 '정산 마무리' 계획(저장하지 않음)."""
+        order = self._get_order(order_id)
+        if order.status not in FINAL_STATUSES:
+            raise InvalidStateError("모든 장비가 반납되었거나 취소된 예약만 정산을 마무리할 수 있습니다.")
+        return st.plan_final_settlement(load_summary(self._conn, order_id))
+
+    def finalize(self, order_id: int, expected: st.FinalSettlementPlan, *,
+                 payment_method: PaymentMethod | None = None,
+                 collect_remaining: bool = False, note: str | None = None) -> st.SettlementSummary:
+        """계획대로 거래를 한 트랜잭션으로 기록한다.
+
+        화면에서 본 계획(`expected`)과 저장 직전 다시 계산한 계획이 다르면(다른 창에서 거래 기록 등)
+        아무것도 기록하지 않고 거부한다. collect_remaining이면 보증금으로 모자란 금액을 받은 것으로 기록한다.
+        결제수단은 실제 돈이 오가는 거래(환급·반환·수금)에만 붙인다.
+        """
+        now = current_time(self._clock)
+        with transaction(self._conn):
+            order = self._get_order(order_id)
+            if order.status not in FINAL_STATUSES:
+                raise InvalidStateError("모든 장비가 반납되었거나 취소된 예약만 정산을 마무리할 수 있습니다.")
+            plan = st.plan_final_settlement(load_summary(self._conn, order_id))
+            if plan != expected:
+                raise InvalidStateError("정산 내용이 바뀌었습니다. 화면을 다시 확인한 뒤 진행해주세요.")
+            steps = list(plan.steps)
+            if collect_remaining and plan.remaining_due_won:
+                steps.append(st.SettlementStep(MoneyKind.RENTAL_RECEIPT, plan.remaining_due_won))
+            if not steps:
+                raise InvalidStateError("정산할 금액이 없습니다.")
+            for step in steps:
+                method = None if step.kind in st.INTERNAL_KINDS else payment_method
+                record_in_txn(self._conn, order, MoneyInput(
+                    kind=step.kind, amount_won=step.amount_won, payment_method=method,
+                    note=note or "정산 마무리",
+                ), now)
+            return load_summary(self._conn, order_id)
+
+    def allowed_kinds(self, order_id: int) -> frozenset[MoneyKind]:
+        """이 예약에 지금 기록할 수 있는 거래 종류(화면의 유형 목록용)."""
+        return allowed_money_kinds(self._get_order(order_id).status)
+
     def unsettled_orders(self) -> list[UnsettledOrder]:
-        """출고 이후 주문 중 미수금 또는 보증금 잔액이 남은 주문(대시보드 '미정산')."""
-        orders = repo.list_orders(self._conn, statuses=sorted(MONEY_ALLOWED_STATUSES))
+        """출고 이후·취소 예약 중 미수금 또는 보증금 잔액이 남은 예약(대시보드 '미정산')."""
+        orders = repo.list_orders(self._conn, statuses=sorted(SETTLEMENT_STATUSES))
         totals = repo.ledger_totals_by_order(self._conn, [o.id for o in orders])
         result = []
         for order in orders:
@@ -174,14 +250,21 @@ class SettlementService:
         return result
 
     def list_rows(self, *, unsettled_only: bool = True) -> list[SettlementRow]:
-        """출고 이후 주문의 정산 현황(기본: 미정산만). 시작 시각 최신순."""
-        orders = repo.list_orders(self._conn, statuses=sorted(MONEY_ALLOWED_STATUSES))
+        """정산 현황(기본: 미정산만). 시작 시각 최신순.
+
+        출고 전 선입금이 있는 확정 예약은 전체 보기에서만 보인다(아직 정산 대상이 아님).
+        돈이 오가지 않은 취소 예약은 제외한다.
+        """
+        statuses = SETTLEMENT_STATUSES | {OrderStatus.CONFIRMED}
+        orders = repo.list_orders(self._conn, statuses=sorted(statuses))
         totals = repo.ledger_totals_by_order(self._conn, [o.id for o in orders])
         names = repo.customer_names(self._conn, (o.customer_id for o in orders))
         rows = []
         for order in orders:
             summary = st.summarize(*totals[order.id])
-            if unsettled_only and summary.is_settled:
+            if order.status in (OrderStatus.CONFIRMED, OrderStatus.CANCELED) and not has_ledger_activity(summary):
+                continue
+            if unsettled_only and (summary.is_settled or order.status == OrderStatus.CONFIRMED):
                 continue
             rows.append(SettlementRow(order, names.get(order.customer_id, ""), summary))
         return rows

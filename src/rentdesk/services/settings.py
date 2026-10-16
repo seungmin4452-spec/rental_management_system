@@ -65,11 +65,11 @@ class SettingsService:
         late_multiplier: str | Decimal,
         turnaround_buffer_minutes: int,
     ) -> RentalPolicy:
-        grace = _validate_minutes("grace_minutes", "유예시간", grace_minutes)
-        buffer = _validate_minutes("turnaround_buffer_minutes", "전환 버퍼", turnaround_buffer_minutes)
+        grace = _validate_minutes("grace_minutes", "연체료 없이 기다려 주는 시간", grace_minutes)
+        buffer = _validate_minutes("turnaround_buffer_minutes", "반납 후 준비 시간", turnaround_buffer_minutes)
         multiplier = parse_multiplier(late_multiplier)
         if multiplier > 100:
-            raise ValidationError("late_multiplier", "연체 배수는 100 이하여야 합니다.")
+            raise ValidationError("late_multiplier", "연체 1일당 일 대여료의 배수는 100배 이하여야 합니다.")
         now = current_time(self._clock)
         with transaction(self._conn):
             repo.set_setting(self._conn, "grace_minutes", grace)

@@ -82,16 +82,18 @@ def find_conflicts(
     ]
 
 
-def describe_conflict(c: ConflictInfo) -> str:
-    """사용자 표시용 한 줄 설명(서울 시각)."""
+def describe_conflict(c: ConflictInfo, *, with_code: bool = True) -> str:
+    """사용자 표시용 한 줄 설명(서울 시각). with_code=False면 장비번호 머리말을 뺀다(장비별 표의 칸용)."""
     start = format_seoul(c.start_at)
     end = format_seoul(c.end_at) if c.end_at else "미정"
     kind = av.OccupancyKind(c.kind)
     if kind == av.OccupancyKind.MAINTENANCE:
-        return f"{c.asset_code}: 정비/사용 불가 ({start} ~ {end})"
-    if kind == av.OccupancyKind.OVERDUE:
-        return f"{c.asset_code}: 예약 {c.order_no} 연체 미반납 (반납 전까지 예약 불가)"
-    return f"{c.asset_code}: 예약 {c.order_no} ({start} ~ {end}, 점검 버퍼 포함)"
+        text = f"정비/사용 불가 ({start} ~ {end})"
+    elif kind == av.OccupancyKind.OVERDUE:
+        text = f"예약 {c.order_no} 연체 미반납 (반납 전까지 예약 불가)"
+    else:
+        text = f"예약 {c.order_no} ({start} ~ {end}, 반납 후 준비 시간 포함)"
+    return f"{c.asset_code}: {text}" if with_code else text
 
 
 @dataclass(frozen=True)
@@ -108,6 +110,11 @@ class AssetOption:
     @property
     def reason(self) -> str:
         return "\n".join(describe_conflict(c) for c in self.conflicts)
+
+    @property
+    def short_reason(self) -> str:
+        """장비별 표의 '사용 불가 이유' 칸용: 장비번호 없이 한 줄."""
+        return " / ".join(describe_conflict(c, with_code=False) for c in self.conflicts)
 
 
 @dataclass(frozen=True)

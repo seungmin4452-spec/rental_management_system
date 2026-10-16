@@ -143,3 +143,80 @@ def test_rental_charge_uses_rounded_up_days():
     assert rental_charge_won(30_000, kst(10, 20, 10), kst(10, 21, 11)) == 60_000
     assert rental_charge_won(30_000, kst(10, 20, 10), kst(10, 20, 11)) == 30_000
     assert rental_charge_won(0, kst(10, 20, 10), kst(10, 22, 10)) == 0
+
+
+# ------------------------------------------------------------------ 정산 마무리 계획 (U4)
+
+
+def _plan(**fields):
+    from rentdesk.domain.settlement import SettlementSummary, plan_final_settlement
+
+    return plan_final_settlement(SettlementSummary(**fields))
+
+
+def _steps(plan):
+    return [(s.kind, s.amount_won) for s in plan.steps]
+
+
+def test_final_plan_deposit_covers_due_and_rest_returned():
+    p = _plan(rental_charges_won=30_000, late_charges_won=10_000, rental_receipts_won=30_000,
+              deposit_in_won=100_000)
+    assert _steps(p) == [(M.DEPOSIT_APPLIED, 10_000), (M.DEPOSIT_OUT, 90_000)]
+    assert p.remaining_due_won == 0 and p.deposit_return_won == 90_000
+
+
+def test_final_plan_deposit_not_enough():
+    p = _plan(rental_charges_won=30_000, damage_charges_won=150_000, deposit_in_won=100_000)
+    assert _steps(p) == [(M.DEPOSIT_APPLIED, 100_000)]
+    assert p.remaining_due_won == 80_000
+
+
+def test_final_plan_nothing_due_only_return_deposit():
+    p = _plan(rental_charges_won=30_000, rental_receipts_won=30_000, deposit_in_won=100_000)
+    assert _steps(p) == [(M.DEPOSIT_OUT, 100_000)]
+
+
+def test_final_plan_overpaid_refunds_rental():
+    p = _plan(rental_charges_won=30_000, discount_charges_won=-5_000, rental_receipts_won=30_000)
+    assert _steps(p) == [(M.RENTAL_REFUND, 5_000)]
+    assert p.rental_refund_won == 5_000
+
+
+def test_final_plan_overpaid_beyond_receipts_reverses_deposit_application():
+    # 보증금에서 20,000원 차감 후 조정(-15,000) → 초과 15,000: 받은 대여료 10,000 환급 + 차감 취소 5,000 후 반환
+    p = _plan(rental_charges_won=30_000, adjustment_charges_won=-15_000, rental_receipts_won=10_000,
+              deposit_in_won=50_000, deposit_applied_won=20_000)
+    assert _steps(p) == [(M.RENTAL_REFUND, 10_000),
+                         (M.DEPOSIT_APPLICATION_REVERSAL, 5_000),
+                         (M.DEPOSIT_OUT, 35_000)]
+
+
+def test_final_plan_already_partially_returned_and_settled():
+    p = _plan(rental_charges_won=30_000, rental_receipts_won=30_000, deposit_in_won=100_000,
+              deposit_out_won=40_000)
+    assert _steps(p) == [(M.DEPOSIT_OUT, 60_000)]
+    assert _plan().is_empty
+
+
+def test_final_plan_steps_pass_validation_in_order():
+    from rentdesk.domain.settlement import (
+        SettlementSummary,
+        apply_money,
+        plan_final_settlement,
+        validate_money_entry,
+    )
+
+    cases = [
+        dict(rental_charges_won=30_000, late_charges_won=10_000, deposit_in_won=100_000),
+        dict(rental_charges_won=30_000, adjustment_charges_won=-15_000, rental_receipts_won=10_000,
+             deposit_in_won=50_000, deposit_applied_won=20_000),
+        dict(rental_charges_won=30_000, damage_charges_won=150_000, deposit_in_won=100_000),
+    ]
+    for fields in cases:
+        s = SettlementSummary(**fields)
+        plan = plan_final_settlement(s)
+        for step in plan.steps:
+            validate_money_entry(s, step.kind, step.amount_won)
+            s = apply_money(s, step.kind, step.amount_won)
+        assert s.deposit_held_won == 0
+        assert s.amount_due_won == plan.remaining_due_won

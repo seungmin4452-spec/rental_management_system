@@ -316,6 +316,7 @@ def test_late_fee_preview_does_not_write(svc, cam, kim):
     assert preview.late.late_days == 2
     assert preview.late.late_fee_won == 60_000
     assert "2일" in preview.basis
+    assert "연체료 없이 기다려 주는 시간 60분" in preview.basis and "× 1배 =" in preview.basis
     assert svc.count("charge_lines") == 1
     assert svc.reservations.get_order(order.id).items[0].status == ItemStatus.OUT
 

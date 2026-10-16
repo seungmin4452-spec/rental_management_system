@@ -155,10 +155,20 @@ def test_invalid_kind_and_method(svc, out_order):
         _rec(svc, out_order, MoneyKind.RENTAL_RECEIPT, 1_000, payment_method="BITCOIN")
 
 
-def test_money_only_after_checkout(svc, cam, kim):
+def test_money_rules_by_status_before_checkout(svc, cam, kim):
+    """U5: 임시 저장은 거래 불가, 확정 예약은 선입금·보증금 수령과 그 환급·반환만."""
+    draft = svc.reservations.create_draft(ReservationInput(kim.id, START, DUE, [cam.id]))
+    with pytest.raises(InvalidStateError, match="임시 저장"):
+        _rec(svc, draft, MoneyKind.RENTAL_RECEIPT, 10_000)
+    svc.reservations.cancel(draft.id)
     order = svc.reservations.create_confirmed(ReservationInput(kim.id, START, DUE, [cam.id]))
-    with pytest.raises(InvalidStateError):
-        _rec(svc, order, MoneyKind.RENTAL_RECEIPT, 10_000)
+    _rec(svc, order, MoneyKind.RENTAL_RECEIPT, 10_000, payment_method=PaymentMethod.TRANSFER)
+    _rec(svc, order, MoneyKind.DEPOSIT_IN, 100_000)
+    _rec(svc, order, MoneyKind.RENTAL_REFUND, 1_000)
+    with pytest.raises(InvalidStateError, match="출고 전"):
+        _rec(svc, order, MoneyKind.DEPOSIT_APPLIED, 1_000)
+    assert svc.settlements.allowed_kinds(order.id) == {
+        MoneyKind.RENTAL_RECEIPT, MoneyKind.RENTAL_REFUND, MoneyKind.DEPOSIT_IN, MoneyKind.DEPOSIT_OUT}
     with pytest.raises(NotFoundError):
         svc.settlements.record(9999, MoneyInput(MoneyKind.RENTAL_RECEIPT, 1))
 
@@ -274,3 +284,139 @@ def test_t24_money_entry_failure_rolls_back(svc, out_order, monkeypatch):
     with pytest.raises(Boom):
         _rec(svc, out_order, MoneyKind.RENTAL_RECEIPT, 30_000)
     assert _snapshot(svc.conn) == before
+
+
+# --------------------------------------------------------------------------- 정산 마무리 (U4)
+
+
+def _completed(svc, out_order, cam, *, late_hours=0, deposit=100_000, paid=0):
+    if deposit:
+        _rec(svc, out_order, MoneyKind.DEPOSIT_IN, deposit, payment_method=PaymentMethod.TRANSFER)
+    if paid:
+        _rec(svc, out_order, MoneyKind.RENTAL_RECEIPT, paid)
+    svc.return_asset(out_order.id, cam.id, kst(10, 21, 10 + late_hours))
+    return out_order.id
+
+
+def test_finalize_applies_deposit_and_returns_rest_atomically(svc, out_order, cam):
+    oid = _completed(svc, out_order, cam, late_hours=5)  # 대여료 30,000 + 연체 30,000(1일) 미수
+    plan = svc.settlements.final_plan(oid)
+    assert plan.deposit_applied_won == 60_000 and plan.deposit_return_won == 40_000
+    after = svc.settlements.finalize(oid, plan, payment_method=PaymentMethod.CASH)
+    assert after.is_settled
+    entries = svc.settlements.get_settlement(oid).entries
+    out = [e for e in entries if e.kind == MoneyKind.DEPOSIT_OUT][0]
+    applied = [e for e in entries if e.kind == MoneyKind.DEPOSIT_APPLIED][0]
+    assert out.payment_method == PaymentMethod.CASH and applied.payment_method is None
+    assert out.note == "정산 마무리"
+
+
+def test_finalize_collect_remaining_when_deposit_short(svc, out_order, cam):
+    oid = _completed(svc, out_order, cam, deposit=10_000)
+    plan = svc.settlements.final_plan(oid)
+    assert plan.remaining_due_won == 20_000
+    not_collected = svc.settlements.finalize(oid, plan)
+    assert not_collected.amount_due_won == 20_000  # 받지 않았으면 미수로 남김
+    plan2 = svc.settlements.final_plan(oid)
+    assert plan2.steps == () and plan2.remaining_due_won == 20_000
+    done = svc.settlements.finalize(oid, plan2, payment_method=PaymentMethod.CARD, collect_remaining=True)
+    assert done.is_settled
+
+
+def test_finalize_rejects_stale_plan_and_records_nothing(svc, out_order, cam):
+    oid = _completed(svc, out_order, cam)
+    plan = svc.settlements.final_plan(oid)
+    _rec(svc, out_order, MoneyKind.RENTAL_RECEIPT, 30_000)  # 다른 창에서 수금
+    before = svc.count("money_entries")
+    with pytest.raises(InvalidStateError, match="정산 내용이 바뀌었습니다"):
+        svc.settlements.finalize(oid, plan)
+    assert svc.count("money_entries") == before
+
+
+def test_finalize_only_for_completed_orders(svc, out_order):
+    with pytest.raises(InvalidStateError, match="모든 장비가 반납되었거나 취소된"):
+        svc.settlements.final_plan(out_order.id)
+
+
+def test_finalize_nothing_to_do(svc, out_order, cam):
+    oid = _completed(svc, out_order, cam, deposit=0, paid=30_000)
+    plan = svc.settlements.final_plan(oid)
+    assert plan.is_empty
+    with pytest.raises(InvalidStateError, match="정산할 금액이 없습니다"):
+        svc.settlements.finalize(oid, plan)
+
+
+def test_finalize_rolls_back_all_steps_on_failure(svc, out_order, cam, monkeypatch):
+    from rentdesk.services import settlements as mod
+
+    oid = _completed(svc, out_order, cam, late_hours=5)
+    plan = svc.settlements.final_plan(oid)
+    real = mod.record_in_txn
+    calls = []
+
+    def flaky(conn, order, data, now):
+        calls.append(data.kind)
+        if len(calls) == 2:
+            raise sqlite3.OperationalError("disk I/O error")
+        return real(conn, order, data, now)
+
+    monkeypatch.setattr(mod, "record_in_txn", flaky)
+    before = svc.count("money_entries")
+    with pytest.raises(sqlite3.OperationalError):
+        svc.settlements.finalize(oid, plan)
+    assert svc.count("money_entries") == before  # 첫 거래도 함께 취소
+
+
+# --------------------------------------------------------------------------- 선입금·취소 (U5)
+
+
+def test_prepaid_then_checkout_and_settle(svc, cam, kim):
+    order = svc.reservations.create_confirmed(ReservationInput(kim.id, START, DUE, [cam.id]))
+    _rec(svc, order, MoneyKind.RENTAL_RECEIPT, 30_000, payment_method=PaymentMethod.TRANSFER)
+    _rec(svc, order, MoneyKind.DEPOSIT_IN, 100_000, payment_method=PaymentMethod.TRANSFER)
+    assert svc.settlements.unsettled_orders() == []  # 출고 전 선입금은 정산 대상 아님
+    assert svc.settlements.list_rows(unsettled_only=True) == []
+    assert [r.order.id for r in svc.settlements.list_rows(unsettled_only=False)] == [order.id]
+    svc.checkout(order.id, START)
+    svc.return_asset(order.id, cam.id, kst(10, 21, 9))
+    s = svc.settlements.summary(order.id)
+    assert (s.amount_due_won, s.deposit_held_won) == (0, 100_000)
+    plan = svc.settlements.final_plan(order.id)
+    assert plan.deposit_return_won == 100_000
+    assert svc.settlements.finalize(order.id, plan).is_settled
+
+
+def test_cancel_prepaid_with_fee_then_refund_rest(svc, cam, kim):
+    order = svc.reservations.create_confirmed(ReservationInput(kim.id, START, DUE, [cam.id]))
+    _rec(svc, order, MoneyKind.RENTAL_RECEIPT, 30_000)
+    _rec(svc, order, MoneyKind.DEPOSIT_IN, 100_000)
+    canceled = svc.reservations.cancel(order.id, cancel_fee_won=10_000)
+    assert canceled.status == OrderStatus.CANCELED
+    charges = svc.settlements.get_settlement(order.id).charges
+    assert [(c.kind.value, c.amount_won, c.description) for c in charges] == [
+        ("ADJUSTMENT", 10_000, "예약 취소 수수료")]
+    assert [u.order_id for u in svc.settlements.unsettled_orders()] == [order.id]
+    with pytest.raises(InvalidStateError, match="취소된 예약"):
+        _rec(svc, order, MoneyKind.DEPOSIT_IN, 1_000)
+    plan = svc.settlements.final_plan(order.id)
+    assert plan.rental_refund_won == 20_000 and plan.deposit_return_won == 100_000
+    assert svc.settlements.finalize(order.id, plan, payment_method=PaymentMethod.TRANSFER).is_settled
+    assert svc.settlements.unsettled_orders() == []
+
+
+def test_cancel_fee_without_prepayment_is_owed(svc, cam, kim):
+    order = svc.reservations.create_confirmed(ReservationInput(kim.id, START, DUE, [cam.id]))
+    svc.reservations.cancel(order.id, cancel_fee_won=5_000)
+    plan = svc.settlements.final_plan(order.id)
+    assert plan.steps == () and plan.remaining_due_won == 5_000
+    assert svc.settlements.finalize(order.id, plan, collect_remaining=True).is_settled
+
+
+def test_cancel_without_money_not_listed_and_fee_validated(svc, cam, kim):
+    order = svc.reservations.create_confirmed(ReservationInput(kim.id, START, DUE, [cam.id]))
+    with pytest.raises(ValidationError):
+        svc.reservations.cancel(order.id, cancel_fee_won=-1)
+    assert svc.reservations.get_order(order.id).status == OrderStatus.CONFIRMED  # 검증 실패 시 변경 없음
+    svc.reservations.cancel(order.id)
+    assert svc.settlements.list_rows(unsettled_only=False) == []
+    assert svc.count("charge_lines") == 0

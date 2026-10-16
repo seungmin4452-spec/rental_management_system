@@ -4,10 +4,12 @@ from datetime import date
 from decimal import Decimal
 
 from openpyxl import load_workbook
+from PySide6.QtCore import Qt
 
-from rentdesk.domain.models import ItemStatus, MoneyKind, OrderStatus, ReturnCondition
+from rentdesk.domain.models import ItemStatus, MoneyKind, OrderStatus, PaymentMethod, ReturnCondition
 from rentdesk.ui.dialogs.asset_dialog import AssetDetailDialog, AssetDialog
 from rentdesk.ui.dialogs.block_dialog import BlockDialog
+from rentdesk.services.reservations import ReservationInput
 from rentdesk.ui.dialogs.checkout_dialog import CheckoutDialog
 from rentdesk.ui.dialogs.customer_dialog import CustomerDialog
 from rentdesk.ui.dialogs.order_detail import OrderDetailDialog
@@ -116,9 +118,29 @@ def test_reservation_wizard_shows_unavailable_with_reason(ctx, svc):
     wz.start.set_value(kst(10, 20, 15))
     wz.due.set_value(kst(10, 21, 15))
     wz.go_next()
-    item = wz.asset_list.item(0)
-    assert "사용 불가" in item.text()
-    assert existing.order_no in item.toolTip()  # US-02: 충돌 예약번호 표시
+    table = wz.asset_table
+    assert table.item(0, 1).text() == "CAM-1"
+    assert table.item(0, 5).text() == "사용 불가"
+    assert existing.order_no in table.item(0, 6).text()  # US-02: 충돌 예약번호를 열로 표시
+    assert not table.item(0, 0).flags() & Qt.ItemFlag.ItemIsEnabled  # 선택 불가
+
+
+def test_reservation_wizard_table_lists_selectable_first_and_checks(ctx, svc):
+    busy = svc.add_asset("AAA-1")
+    free = svc.add_asset("ZZZ-1")
+    k = svc.add_customer()
+    svc.book(k.id, [busy.id], kst(10, 20, 10), kst(10, 21, 10))
+    wz = ReservationWizard(ctx, customer_id=k.id)
+    wz.start.set_value(kst(10, 20, 15))
+    wz.due.set_value(kst(10, 21, 15))
+    wz.go_next()
+    table = wz.asset_table
+    assert [table.item(r, 1).text() for r in range(table.rowCount())] == ["ZZZ-1", "AAA-1"]
+    table.item(0, 0).setCheckState(Qt.CheckState.Checked)
+    assert wz._selected == {free.id}
+    assert "1개" in wz.selected_label.text()
+    wz.only_available.setChecked(True)
+    assert table.rowCount() == 1
 
 
 def test_reservation_wizard_conflict_on_save_returns_to_step2(ctx, svc, ui):
@@ -259,9 +281,26 @@ def test_settlement_dialog_rejects_over_refund_and_records(ctx, svc, ui):
     assert "70,000원" in dlg.figures["deposit_held"].text()
 
 
-def test_settlement_dialog_disabled_before_checkout(ctx, svc):
+def test_settlement_dialog_before_checkout_records_prepayment(ctx, svc, ui):
+    """U5: 출고 전에는 선입금·보증금 수령과 그 환급·반환만 고를 수 있고, 선입금으로 표시."""
     order, _ = _confirmed(svc, "CAM-1")
     dlg = SettlementDialog(ctx, order.id)
+    assert dlg.record_btn.isEnabled() and dlg.final_box.isHidden() and not dlg.details.isHidden()
+    kinds = {dlg.kind.itemData(i) for i in range(dlg.kind.count())}
+    assert kinds == {MoneyKind.RENTAL_RECEIPT, MoneyKind.RENTAL_REFUND, MoneyKind.DEPOSIT_IN,
+                     MoneyKind.DEPOSIT_OUT}
+    dlg.kind.setCurrentIndex(dlg.kind.findData(MoneyKind.RENTAL_RECEIPT))
+    dlg.amount.setValue(10_000)
+    assert dlg.submit()
+    assert "선입금 10,000원" in dlg.state.text() and "출고 때 받을 대여료 <b>20,000원</b>" in dlg.state.text()
+    assert "확인 필요" not in dlg.state.text()
+
+
+def test_settlement_dialog_disabled_for_draft(ctx, svc):
+    k = svc.add_customer()
+    a = svc.add_asset("CAM-1")
+    draft = svc.reservations.create_draft(ReservationInput(k.id, kst(10, 20, 10), kst(10, 21, 10), [a.id]))
+    dlg = SettlementDialog(ctx, draft.id)
     assert not dlg.record_btn.isEnabled()
 
 
@@ -336,3 +375,96 @@ def test_settings_page_policy_and_business(ctx, svc, ui):
     assert page.save_business()
     assert svc.settings.get_business_info().name == "예제 렌탈샵"
     window.close()
+
+
+def test_settlement_dialog_final_box_settles_in_one_click(ctx, svc, ui):
+    order, (cam,) = _confirmed(svc, "CAM-1")
+    svc.checkout(order.id, kst(10, 19, 10), deposit_in_won=100_000)
+    svc.return_asset(order.id, cam.id, kst(10, 20, 9))
+    dlg = SettlementDialog(ctx, order.id)
+    assert not dlg.final_box.isHidden() and dlg.details.isHidden()  # 반납 완료: 마무리만 보임
+    assert "30,000원" in dlg.final_text.text() and "70,000원" in dlg.final_text.text()
+    assert dlg.final_collect.isHidden()
+    dlg.final_method.setCurrentIndex(dlg.final_method.findData(PaymentMethod.TRANSFER))
+    ui.answer = False
+    assert not dlg.finalize()
+    ui.answer = True
+    assert dlg.finalize()
+    assert svc.settlements.summary(order.id).is_settled
+    assert dlg.changed and "정산 완료" in dlg.state.text()
+    assert not dlg.final_btn.isEnabled()  # 더 할 일 없음
+    dlg.details_btn.click()
+    assert not dlg.details.isHidden()
+
+
+def test_settlement_dialog_final_box_collect_remaining(ctx, svc, ui):
+    order, (cam,) = _confirmed(svc, "CAM-1")
+    svc.checkout(order.id, kst(10, 19, 10), deposit_in_won=10_000)
+    svc.return_asset(order.id, cam.id, kst(10, 20, 9))
+    dlg = SettlementDialog(ctx, order.id)
+    assert not dlg.final_collect.isHidden() and "20,000원" in dlg.final_collect.text()
+    dlg.final_collect.setChecked(True)
+    assert dlg.finalize()
+    assert svc.settlements.summary(order.id).is_settled
+
+
+def test_settlement_dialog_in_rental_shows_details_not_final(ctx, svc):
+    order, _ = _confirmed(svc, "CAM-1")
+    svc.checkout(order.id, kst(10, 19, 10))
+    dlg = SettlementDialog(ctx, order.id)
+    assert dlg.final_box.isHidden() and not dlg.details.isHidden()
+
+
+def test_checkout_dialog_fills_remaining_after_prepayment(ctx, svc, ui):
+    from rentdesk.services.settlements import MoneyInput
+
+    order, _ = _confirmed(svc, "CAM-1")
+    svc.settlements.record(order.id, MoneyInput(MoneyKind.RENTAL_RECEIPT, 10_000))
+    svc.clock.now = kst(10, 19, 10)
+    dlg = CheckoutDialog(ctx, order.id)
+    assert dlg.receipt.value() == 0  # 미리 채우지 않는다
+    assert "선입금: 대여료 10,000원" in dlg.amounts.text()
+    dlg.fill_remaining()
+    assert (dlg.receipt.value(), dlg.deposit.value()) == (20_000, 100_000)
+
+
+def test_order_detail_cancel_with_prepayment_asks_fee_and_opens_settlement(ctx, svc, ui, monkeypatch):
+    from rentdesk.services.settlements import MoneyInput
+
+    order, _ = _confirmed(svc, "CAM-1")
+    svc.settlements.record(order.id, MoneyInput(MoneyKind.DEPOSIT_IN, 100_000))
+    dlg = OrderDetailDialog(ctx, order.id)
+    assert "받은 보증금 <b>100,000원</b>" in dlg.money.text()
+    opened = []
+    monkeypatch.setattr(dlg, "ask_cancel_fee", lambda summary: None)
+    assert not dlg.cancel_order()  # 돌아가기
+    monkeypatch.setattr(dlg, "ask_cancel_fee", lambda summary: 20_000)
+    monkeypatch.setattr(dlg, "open_settlement", lambda: opened.append(True))
+    assert dlg.cancel_order()
+    assert opened == [True]
+    assert svc.reservations.get_order(order.id).status == OrderStatus.CANCELED
+    assert "미정산" in dlg.money.text() and dlg.settle_btn.isEnabled()
+    plan = svc.settlements.final_plan(order.id)
+    assert plan.deposit_applied_won == 20_000 and plan.deposit_return_won == 80_000
+
+
+def test_extension_dialog_previews_and_extends(ctx, svc, ui):
+    from rentdesk.ui.dialogs.extension_dialog import ExtensionDialog
+
+    order, (cam,) = _confirmed(svc, "CAM-1")  # 10/19 10:00 ~ 10/20 10:00
+    svc.checkout(order.id, kst(10, 19, 10))
+    later = svc.book(svc.add_customer("다음").id, [cam.id], kst(10, 22, 12), kst(10, 23, 12))
+    dlg = ExtensionDialog(ctx, order.id)
+    assert "추가 대여일수 <b>1일</b>" in dlg.preview.text() and dlg.submit_btn.isEnabled()
+    dlg.new_due.set_value(kst(10, 23, 10))
+    assert not dlg.submit_btn.isEnabled() and later.order_no in dlg.problem.text()
+    dlg.new_due.set_value(kst(10, 20, 9))
+    assert not dlg.submit_btn.isEnabled()
+    assert "지금 반납 예정보다 뒤" in dlg.errors._labels["new_due_at"].text()
+    dlg.new_due.set_value(kst(10, 22, 10))
+    dlg.discount.setValue(10_000)
+    assert "50,000원" in dlg.preview.text()
+    assert dlg.submit()
+    assert dlg.result_order.due_at == kst(10, 22, 10)
+    detail = OrderDetailDialog(ctx, order.id)
+    assert "연장:" in detail.header.text() and detail.extend_btn.isEnabled()

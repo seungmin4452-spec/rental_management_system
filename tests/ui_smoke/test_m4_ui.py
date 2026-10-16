@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 from nacl.signing import SigningKey
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QLabel, QPushButton
 
 from rentdesk.app import AppController, AppPaths, bootstrap_database, run_self_check
 from rentdesk.context import AppContext
@@ -192,3 +194,123 @@ def test_self_check_writes_ok_result(qapp, tmp_path):
     result = json.loads(out.read_text(encoding="utf-8"))
     assert result["ok"] is True
     assert result["checks"]["backup_counts"]["assets"] > 0
+
+
+# ------------------------------------------------------------------ 화면 크기
+
+
+def test_settings_scale_choice_saved_per_device(conn, clock, ui, tmp_path):
+    from rentdesk.ui import display_scale
+
+    prefs = LocalPreferences(tmp_path / "preferences.json")
+    window = MainWindow(AppContext(conn, clock, preferences=prefs))
+    page = window.page_by_key["settings"]
+    assert page.scale.currentData() == display_scale.AUTO
+    page.scale.setCurrentIndex(page.scale.findData(110))
+    assert page.save_scale()
+    assert prefs.get(display_scale.PREF_KEY) == 110
+    assert any("다시 시작" in t for t in ui.texts("info"))
+    page.refresh()
+    assert page.scale.currentData() == 110
+
+
+def test_main_window_fits_available_screen(ctx):
+    from PySide6.QtGui import QGuiApplication
+
+    window = MainWindow(ctx)
+    avail = QGuiApplication.primaryScreen().availableGeometry()
+    assert window.minimumHeight() <= avail.height()
+    assert window.minimumWidth() <= avail.width()
+
+
+# ------------------------------------------------------------------ 도움말·화면 다듬기 (U2)
+
+
+def test_help_menu_has_about_with_support_contact(ctx):
+    from rentdesk.platform.resources import SupportInfo
+    from rentdesk.ui.dialogs.about_dialog import AboutDialog
+
+    window = MainWindow(ctx)
+    menus = [a.text() for a in window.menuBar().actions()]
+    assert menus == ["파일", "도움말"]
+    dlg = AboutDialog(window, support=SupportInfo(contact="크몽 메시지로 문의"))
+    texts = [w.text() for w in dlg.findChildren(QLabel)]
+    assert any("크몽 메시지로 문의" in t for t in texts)
+    assert not [b for b in dlg.findChildren(QPushButton) if b.text() == "사용 안내 열기"]
+    with_manual = AboutDialog(window, support=SupportInfo(contact="x", manual_url="https://example.com"))
+    assert [b for b in with_manual.findChildren(QPushButton) if b.text() == "사용 안내 열기"]
+
+
+def test_support_info_falls_back_on_bad_file(tmp_path, monkeypatch):
+    from rentdesk.platform import resources
+
+    (tmp_path / "support").mkdir()
+    monkeypatch.setattr(resources, "get_resources_dir", lambda: tmp_path)
+    assert resources.get_support_info() == resources.DEFAULT_SUPPORT  # 파일 없음
+    (tmp_path / "support" / "support.json").write_text("{깨진 json", encoding="utf-8")
+    assert resources.get_support_info() == resources.DEFAULT_SUPPORT
+    (tmp_path / "support" / "support.json").write_text(
+        '{"contact": "문의처", "manual_url": "http://insecure"}', encoding="utf-8")
+    info = resources.get_support_info()
+    assert info.contact == "문의처" and info.manual_url == ""  # https만 허용
+
+
+def test_bundled_support_file_is_valid():
+    from rentdesk.platform.resources import DEFAULT_SUPPORT, get_support_info
+
+    assert get_support_info() != DEFAULT_SUPPORT
+
+
+def test_highlighted_rows_get_soft_background(qapp):
+    from rentdesk.ui import theme
+    from rentdesk.ui.widgets import DataTable
+
+    table = DataTable(["a", "b"])
+    table.set_rows([(1, ["x", "y"]), (2, ["z", "w"])], highlight=lambda k: k == 1)
+    assert table.item(0, 0).background().color() == theme.color("danger_soft")
+    assert table.item(1, 0).background().style() == Qt.BrushStyle.NoBrush
+
+
+def test_settings_number_fields_not_full_width(ctx):
+    from rentdesk.ui.pages.settings import FIELD_WIDTH
+
+    page = MainWindow(ctx).page_by_key["settings"]
+    for w in (page.grace, page.multiplier, page.buffer, page.scale):
+        assert w.maximumWidth() == FIELD_WIDTH
+
+
+# ------------------------------------------------------------------ 자동 백업 (U3)
+
+
+def test_auto_backup_on_exit_only_with_valid_license(controller, paths, tmp_path, key, license_service):
+    assert controller.auto_backup_on_exit() is None  # 라이선스 없음 → 실제 데이터 미사용
+    license_service.install(_license_file(tmp_path, key, license_service))
+    result = controller.auto_backup_on_exit()
+    assert result.path.parent == paths.backups / "auto" and result.path.exists()
+
+
+def test_auto_backup_notice_shown_in_banner_and_settings(ctx, tmp_path):
+    from rentdesk.services.auto_backup import NOTICE_KEY
+
+    prefs = LocalPreferences(tmp_path / "preferences.json")
+    prefs.set(NOTICE_KEY, "지난번 종료 때 자동 백업을 만들지 못했습니다.")
+    ctx.preferences = prefs
+    window = MainWindow(ctx)
+    assert "자동 백업을 만들지 못했습니다" in window.backup_banner_label.text()
+    page = window.page_by_key["settings"]
+    assert page.auto_enabled.isChecked() and page.auto_enabled.isEnabled()
+    assert not page.auto_copy.isEnabled()  # 기본 백업 폴더를 고르기 전
+    page.set_backup_dir(tmp_path)
+    assert page.auto_copy.isEnabled()
+    page.auto_copy.setChecked(True)
+    page.auto_enabled.setChecked(False)
+    assert prefs.get("auto_backup_enabled") is False and prefs.get("auto_backup_copy_to_backup_dir") is True
+    assert not page.auto_copy.isEnabled()
+
+
+def test_auto_backup_disabled_in_demo(conn, clock, ui, tmp_path):
+    window = MainWindow(AppContext(conn, clock, is_demo=True,
+                                   preferences=LocalPreferences(tmp_path / "p.json")))
+    page = window.page_by_key["settings"]
+    assert not page.auto_enabled.isEnabled()
+    assert "예제 데이터 모드" in page.auto_note.text()

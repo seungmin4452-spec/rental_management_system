@@ -43,8 +43,8 @@ class ReportsPage(Page):
         self.asset_category = QComboBox()
         self.asset_lifecycle = QComboBox()
         self.asset_lifecycle.addItem("전체", None)
-        self.asset_lifecycle.addItem("활성", LifecycleStatus.ACTIVE)
-        self.asset_lifecycle.addItem("은퇴", LifecycleStatus.RETIRED)
+        self.asset_lifecycle.addItem("운영 중", LifecycleStatus.ACTIVE)
+        self.asset_lifecycle.addItem("사용 중지", LifecycleStatus.RETIRED)
         g1 = self._group("장비 목록", [("카테고리", self.asset_category),
                                        ("운영 상태", self.asset_lifecycle)], "assets")
         # 2. 예약 목록

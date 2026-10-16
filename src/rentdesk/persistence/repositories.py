@@ -12,6 +12,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from rentdesk.domain.models import (
+    OrderExtension,
     Asset,
     Category,
     ChargeKind,
@@ -595,6 +596,43 @@ def confirmed_orders_for_asset(
     ).fetchall()
 
 
+def calendar_item_rows(
+    conn: sqlite3.Connection, start: datetime, end: datetime
+) -> list[sqlite3.Row]:
+    """예약 달력(U9): 보기 기간 `[start, end)`에 걸치는 미취소 품목(임시 저장 포함)과 고객명.
+
+    끝은 반납 완료면 실제 반납, 아니면 반납 예정. 대여 중(OUT) 품목은 연체로 끝이 없을 수 있어
+    시작만 비교한다. 정책 판단(막대 종류)은 도메인 함수가 한다.
+    """
+    return conn.execute(
+        """
+        SELECT i.asset_id, i.status AS item_status, i.actual_return_at_utc,
+               o.id AS order_id, o.order_no, o.status AS order_status,
+               o.start_at_utc, o.due_at_utc, c.name AS customer_name
+        FROM rental_items i
+        JOIN rental_orders o ON o.id = i.order_id
+        JOIN customers c ON c.id = o.customer_id
+        WHERE o.status <> 'CANCELED' AND i.status <> 'CANCELED'
+          AND o.start_at_utc < ?
+          AND (i.status = 'OUT' OR COALESCE(i.actual_return_at_utc, o.due_at_utc) >= ?)
+        ORDER BY o.start_at_utc, o.id
+        """,
+        (to_utc_str(end), to_utc_str(start)),
+    ).fetchall()
+
+
+def blocks_in_period(
+    conn: sqlite3.Connection, start: datetime, end: datetime
+) -> list[MaintenanceBlock]:
+    """보기 기간 `[start, end)`에 걸치는 정비 블록(끝 없는 블록 포함)."""
+    rows = conn.execute(
+        "SELECT * FROM maintenance_blocks WHERE start_at_utc < ?"
+        " AND (end_at_utc IS NULL OR end_at_utc > ?) ORDER BY start_at_utc",
+        (to_utc_str(end), to_utc_str(start)),
+    )
+    return [_row_to_block(r) for r in rows]
+
+
 def asset_has_out_items(conn: sqlite3.Connection, asset_id: int) -> bool:
     row = conn.execute(
         "SELECT 1 FROM rental_items WHERE asset_id = ? AND status = 'OUT' LIMIT 1", (asset_id,)
@@ -999,3 +1037,42 @@ def search_orders_by_no(conn: sqlite3.Connection, query: str, limit: int = 20) -
         """,
         (_like_pattern(query), limit),
     ).fetchall()
+
+
+# ------------------------------------------------------------------ 대여 연장 (U6)
+
+
+def set_order_due(conn: sqlite3.Connection, order_id: int, due_at: datetime, *, now: datetime) -> None:
+    conn.execute(
+        "UPDATE rental_orders SET due_at_utc = ?, updated_at_utc = ? WHERE id = ?",
+        (to_utc_str(due_at), to_utc_str(now), order_id),
+    )
+
+
+def insert_extension(
+    conn: sqlite3.Connection, *, order_id: int, previous_due_at: datetime, new_due_at: datetime,
+    added_days: int, amount_won: int, note: str | None, now: datetime,
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO order_extensions (order_id, previous_due_at_utc, new_due_at_utc, added_days,"
+        " amount_won, note, created_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (order_id, to_utc_str(previous_due_at), to_utc_str(new_due_at), added_days, amount_won,
+         note, to_utc_str(now)),
+    )
+    return int(cur.lastrowid)
+
+
+def list_extensions(conn: sqlite3.Connection, order_id: int) -> list[OrderExtension]:
+    rows = conn.execute(
+        "SELECT * FROM order_extensions WHERE order_id = ? ORDER BY id", (order_id,)
+    ).fetchall()
+    return [
+        OrderExtension(
+            id=row["id"], order_id=row["order_id"],
+            previous_due_at=parse_utc_str(row["previous_due_at_utc"]),
+            new_due_at=parse_utc_str(row["new_due_at_utc"]),
+            added_days=row["added_days"], amount_won=row["amount_won"], note=row["note"],
+            created_at=parse_utc_str(row["created_at_utc"]),
+        )
+        for row in rows
+    ]

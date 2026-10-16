@@ -34,9 +34,9 @@ def parse_multiplier(value: str | Decimal) -> Decimal:
     try:
         dec = Decimal(value)
     except (InvalidOperation, TypeError, ValueError):
-        raise ValidationError("late_multiplier", "연체 배수는 숫자여야 합니다.") from None
+        raise ValidationError("late_multiplier", "연체 1일당 일 대여료의 배수는 숫자여야 합니다.") from None
     if not dec.is_finite() or dec < 0:
-        raise ValidationError("late_multiplier", "연체 배수는 0 이상의 숫자여야 합니다.")
+        raise ValidationError("late_multiplier", "연체 1일당 일 대여료의 배수는 0 이상의 숫자여야 합니다.")
     return dec
 
 
@@ -110,3 +110,39 @@ def late_fee(
 def rental_charge_won(daily_rate_won: int, start_at: datetime, due_at: datetime) -> int:
     """품목 1개의 약정 대여료(출고 시 `RENTAL` 청구액) = 스냅샷 일 대여료 × 약정 대여일수."""
     return daily_rate_won * rental_days(start_at, due_at)
+
+
+
+@dataclass(frozen=True)
+class ExtensionQuote:
+    """대여 연장 요금 (USABILITY_PLAN U6)."""
+
+    added_days: int
+    base_won: int
+    discount_won: int
+
+    @property
+    def amount_won(self) -> int:
+        return self.base_won - self.discount_won
+
+
+def quote_extension(
+    daily_rates_won: Sequence[int],
+    start_at: datetime,
+    old_due_at: datetime,
+    new_due_at: datetime,
+    discount_won: object = 0,
+) -> ExtensionQuote:
+    """아직 반납하지 않은 장비의 (새 대여일수 − 기존 대여일수) × 확정 시 일 대여료 합계.
+
+    대여일수 계산은 출고 때와 같은 `rental_days`(예약 시작 기준 24시간 단위 올림)를 쓴다.
+    연장분 할인은 연장 기본 요금을 넘을 수 없다.
+    """
+    if not new_due_at > old_due_at:
+        raise ValidationError("new_due_at", "새 반납 예정 일시는 지금 반납 예정보다 뒤여야 합니다.")
+    added = rental_days(start_at, new_due_at) - rental_days(start_at, old_due_at)
+    base = sum(rate * added for rate in daily_rates_won)
+    discount = validate_won("discount_won", discount_won, label="연장 할인")
+    if discount > base:
+        raise ValidationError("discount_won", "연장 할인은 연장 대여료를 넘을 수 없습니다.")
+    return ExtensionQuote(added_days=added, base_won=base, discount_won=discount)

@@ -32,6 +32,7 @@ from rentdesk.platform.instance_lock import InstanceLock
 from rentdesk.platform.paths import AppDataUnavailableError, configure_app_identity
 from rentdesk.platform.preferences import LocalPreferences
 from rentdesk.platform.resources import get_app_icon_path
+from rentdesk.services.auto_backup import AutoBackupResult, AutoBackupSettings
 from rentdesk.services.backup import (
     BackupError,
     BackupService,
@@ -42,7 +43,7 @@ from rentdesk.services.backup import (
 )
 from rentdesk.services.licensing import LicenseService, LicenseStatus, verify_license
 from rentdesk.services.sample_data import load_sample_data
-from rentdesk.ui import feedback
+from rentdesk.ui import display_scale, feedback
 from rentdesk.ui.backup_actions import choose_backup_file, confirm_restore, save_backup_dialog
 from rentdesk.ui.dialogs.license_dialog import GateChoice, LicenseDialog
 from rentdesk.ui.main_window import MainWindow
@@ -243,6 +244,12 @@ class AppController:
         )
         return True
 
+    def auto_backup_on_exit(self) -> AutoBackupResult | None:
+        """종료 시 실제 데이터 자동 백업(U3). 라이선스가 없으면 실제 데이터를 쓰지 않았으므로 건너뛴다."""
+        if self.preferences is None or not self.license.check().valid:
+            return None
+        return AutoBackupSettings(self.preferences).run(self.real_conn, self.paths.backups / "auto", now_utc())
+
     def close(self) -> None:
         if self.demo_conn is not None:
             self.demo_conn.close()
@@ -336,7 +343,11 @@ def main(argv: list[str] | None = None) -> int:
 
 
 
-    app = QApplication(args)
+    def read_scale_choice() -> object:
+        configure_app_identity()
+        return LocalPreferences(platform_paths.get_preferences_path()).get(display_scale.PREF_KEY)
+
+    app = display_scale.create_application(args, read_scale_choice)
     configure_app_identity()
     apply_theme(app)
     if get_app_icon_path().is_file():
@@ -381,7 +392,9 @@ def main(argv: list[str] | None = None) -> int:
         try:
             if not controller.start():
                 return 0
-            return app.exec()
+            code = app.exec()
+            controller.auto_backup_on_exit()
+            return code
         finally:
             controller.close()
             controller.real_conn.close()

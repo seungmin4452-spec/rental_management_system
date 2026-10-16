@@ -42,12 +42,12 @@ from rentdesk.services.common import Clock, current_time, default_clock
 from rentdesk.services.dashboard import overdue_rows, schedule_rows
 from rentdesk.services.reservations import ReservationService
 from rentdesk.services.settings import BusinessInfo, read_business_info
-from rentdesk.services.settlements import MONEY_ALLOWED_STATUSES, load_summary
+from rentdesk.services.settlements import SETTLEMENT_STATUSES, has_ledger_activity, load_summary
 
 DISCLAIMER = "본 자료는 내부 관리용이며 금융·세무 공식 증빙(영수증·세금계산서)이 아닙니다."
 WON_FORMAT = '#,##0"원"'
 DATETIME_FORMAT = "yyyy-mm-dd hh:mm"
-LIFECYCLE_LABELS = {LifecycleStatus.ACTIVE: "활성", LifecycleStatus.RETIRED: "은퇴"}
+LIFECYCLE_LABELS = {LifecycleStatus.ACTIVE: "운영 중", LifecycleStatus.RETIRED: "사용 중지"}
 
 
 class ColumnType(StrEnum):
@@ -230,7 +230,7 @@ class ReportService:
         _validate_range(start, end)
         period_start, period_end = _period_utc(start, end)
         orders = ReservationService(self._conn, self._clock).list_order_rows(
-            statuses=sorted(MONEY_ALLOWED_STATUSES), period_start=period_start,
+            statuses=sorted(SETTLEMENT_STATUSES), period_start=period_start,
             period_end=period_end,
         )
         orders.sort(key=lambda r: (r.order.start_at, r.order.order_no))
@@ -239,6 +239,8 @@ class ReportService:
             s = load_summary(self._conn, r.order.id)
             if unsettled_only and s.is_settled:
                 continue
+            if r.order.status == OrderStatus.CANCELED and not has_ledger_activity(s):
+                continue  # 돈이 오가지 않은 취소 예약
             data.append((r, s))
         return ReportTable(
             title="정산 목록",
@@ -251,8 +253,8 @@ class ReportService:
             columns=(
                 Column("예약번호", width=17), Column("고객", width=18),
                 Column("상태", width=10), Column("출고 시각", ColumnType.DATETIME, 17),
-                Column("청구 합계", ColumnType.WON), Column("대여료 순수금", ColumnType.WON),
-                Column("보증금 대금충당", ColumnType.WON), Column("미수금", ColumnType.WON),
+                Column("청구 합계", ColumnType.WON), Column("받은 대여료(환급 제외)", ColumnType.WON),
+                Column("보증금에서 차감", ColumnType.WON), Column("미수금", ColumnType.WON),
                 Column("보증금 보유액", ColumnType.WON), Column("정산", width=8),
             ),
             rows=tuple(
@@ -266,7 +268,7 @@ class ReportService:
             ),
             totals=(
                 ("청구 합계", sum(s.charge_total_won for _, s in data)),
-                ("대여료 순수금 합계", sum(s.net_rental_receipts_won for _, s in data)),
+                ("받은 대여료(환급 제외) 합계", sum(s.net_rental_receipts_won for _, s in data)),
                 ("미수금 합계", sum(s.amount_due_won for _, s in data)),
                 ("보증금 보유액 합계", sum(s.deposit_held_won for _, s in data)),
             ),

@@ -214,6 +214,20 @@ class MoneyEntry:
 
 
 @dataclass(frozen=True)
+class OrderExtension:
+    """대여 연장 이력 1행 (USABILITY_PLAN U6)."""
+
+    id: int
+    order_id: int
+    previous_due_at: datetime
+    new_due_at: datetime
+    added_days: int
+    amount_won: int
+    note: str | None
+    created_at: datetime
+
+
+@dataclass(frozen=True)
 class RentalPolicy:
     """예약 확정 시 스냅샷으로 복사되는 운영 설정 (PRD 5 S-09, 7.3)."""
 

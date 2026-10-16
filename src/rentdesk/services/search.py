@@ -47,14 +47,14 @@ class SearchService:
             return []
         results: list[SearchResult] = []
         for a in repo.search_assets(self._conn, query=q, include_retired=True)[:MAX_RESULTS_PER_KIND]:
-            retired = " (은퇴)" if a.lifecycle_status == "RETIRED" else ""
+            retired = " (사용 중지)" if a.lifecycle_status == "RETIRED" else ""
             results.append(SearchResult(
                 ResultKind.ASSET, a.id, f"{a.asset_code} {a.name}{retired}", a.category_name
             ))
         for c in repo.search_customers(self._conn, query=q, include_archived=True)[
             :MAX_RESULTS_PER_KIND
         ]:
-            archived = " (보관)" if c.is_archived else ""
+            archived = " (숨김)" if c.is_archived else ""
             kind = "사업자" if c.customer_type == "BUSINESS" else "개인"
             results.append(SearchResult(ResultKind.CUSTOMER, c.id, f"{c.name}{archived}", kind))
         for r in repo.search_orders_by_no(self._conn, q, MAX_RESULTS_PER_KIND):

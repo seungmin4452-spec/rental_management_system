@@ -1,7 +1,7 @@
 """예약 작성/수정 3단계 (S-04, W-02).
 
 1. 고객·시작·약정 반납 일시
-2. 사용 가능한 장비 선택(사용 불가 장비는 선택 불가 + 사유/겹치는 예약번호 표시)
+2. 사용 가능한 장비 선택(표. 사용 불가 장비는 선택 불가 + 이유/겹치는 예약번호를 열로 표시)
 3. 예상 대여료·보증금·할인 확인 후 `임시 저장` 또는 `예약 확정`
 
 확정 시 충돌은 서비스가 DB 트랜잭션 안에서 다시 검사한다(화면 사전 검사만 신뢰하지 않음).
@@ -9,10 +9,12 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from collections.abc import Sequence
+from datetime import datetime, timedelta
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
     QDialog,
@@ -20,11 +22,11 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QPlainTextEdit,
     QPushButton,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -38,21 +40,25 @@ from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import FormErrors, SeoulDateTimeEdit, WonSpinBox, next_hour
 
 STEP_TITLES = ["고객·기간", "장비 선택", "금액 확인"]
+ASSET_COLUMNS = ["선택", "관리번호", "장비명", "일 대여료", "보증금", "상태", "사용 불가 이유"]
 
 
 class ReservationWizard(QDialog):
     def __init__(self, ctx: AppContext, order: RentalOrder | None = None,
-                 parent: QWidget | None = None, *, customer_id: int | None = None):
+                 parent: QWidget | None = None, *, customer_id: int | None = None,
+                 asset_ids: Sequence[int] = (), start_at: datetime | None = None,
+                 due_at: datetime | None = None):
+        """새 예약은 `asset_ids`·`start_at`·`due_at`로 장비·기간을 미리 채울 수 있다(예약 달력)."""
         super().__init__(parent)
         self.ctx = ctx
         self.order = order
         self.result_order: RentalOrder | None = None
-        self.setMinimumSize(720, 520)
+        self.setMinimumSize(900, 540)
         self._selected: set[int] = set(i.asset_id for i in order.items
-                                       if i.status.value != "CANCELED") if order else set()
+                                       if i.status.value != "CANCELED") if order else set(asset_ids)
 
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._build_step1(customer_id))
+        self.stack.addWidget(self._build_step1(customer_id, start_at, due_at))
         self.stack.addWidget(self._build_step2())
         self.stack.addWidget(self._build_step3())
 
@@ -87,7 +93,8 @@ class ReservationWizard(QDialog):
     def is_confirmed_edit(self) -> bool:
         return self.order is not None and self.order.status == OrderStatus.CONFIRMED
 
-    def _build_step1(self, customer_id: int | None) -> QWidget:
+    def _build_step1(self, customer_id: int | None, start_at: datetime | None,
+                     due_at: datetime | None) -> QWidget:
         page = QWidget()
         form = QFormLayout(page)
         self.errors1 = FormErrors(form)
@@ -107,9 +114,10 @@ class ReservationWizard(QDialog):
         rl.addWidget(self.customer, 1)
         rl.addWidget(new_customer)
 
-        start = next_hour(self.ctx.now())
+        start = start_at or next_hour(self.ctx.now())
+        due = due_at or start + timedelta(days=1)
         self.start = SeoulDateTimeEdit(self.order.start_at if self.order else start)
-        self.due = SeoulDateTimeEdit(self.order.due_at if self.order else start + timedelta(days=1))
+        self.due = SeoulDateTimeEdit(self.order.due_at if self.order else due)
         self.days_label = QLabel()
         self.start.dateTimeChanged.connect(self._update_days)
         self.due.dateTimeChanged.connect(self._update_days)
@@ -123,7 +131,7 @@ class ReservationWizard(QDialog):
             idx = self.customer.findData(target)
             if idx < 0:  # 보관된 고객의 기존 예약 수정
                 c = self.ctx.customers.get_customer(target)
-                self.customer.addItem(f"{c.name} (보관)", c.id)
+                self.customer.addItem(f"{c.name} (숨김)", c.id)
                 idx = self.customer.count() - 1
             self.customer.setCurrentIndex(idx)
         else:
@@ -149,14 +157,21 @@ class ReservationWizard(QDialog):
         filters.addWidget(self.asset_query, 1)
         filters.addWidget(self.category)
         filters.addWidget(self.only_available)
-        self.asset_list = QListWidget()
-        self.asset_list.itemChanged.connect(self._on_item_changed)
+        self.asset_table = QTableWidget(0, len(ASSET_COLUMNS))
+        self.asset_table.setHorizontalHeaderLabels(ASSET_COLUMNS)
+        self.asset_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.asset_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.asset_table.setShowGrid(False)
+        self.asset_table.setWordWrap(False)
+        self.asset_table.verticalHeader().setVisible(False)
+        self.asset_table.horizontalHeader().setStretchLastSection(True)
+        self.asset_table.itemChanged.connect(self._on_item_changed)
         self.selected_label = QLabel()
         self.errors2 = QLabel()
         theme.set_tone(self.errors2, "danger")
         self.errors2.setWordWrap(True)
         lay.addLayout(filters)
-        lay.addWidget(self.asset_list, 1)
+        lay.addWidget(self.asset_table, 1)
         lay.addWidget(self.selected_label)
         lay.addWidget(self.errors2)
         return page
@@ -219,29 +234,39 @@ class ReservationWizard(QDialog):
             category_id=self.category.currentData(), exclude_order_id=exclude,
             buffer_minutes=buffer,
         )
-        self.asset_list.blockSignals(True)
-        self.asset_list.clear()
-        for opt in options:
-            if self.only_available.isChecked() and not opt.available and opt.asset.id not in self._selected:
-                continue
+        shown = [o for o in options if not (self.only_available.isChecked() and not o.available
+                                             and o.asset.id not in self._selected)]
+        shown.sort(key=lambda o: not (o.available or o.asset.id in self._selected))  # 고를 수 있는 장비를 위로
+        table = self.asset_table
+        table.blockSignals(True)
+        table.setRowCount(len(shown))
+        muted = theme.color("text_muted")
+        for r, opt in enumerate(shown):
             a = opt.asset
-            status = "사용 가능" if opt.available else "사용 불가"
-            item = QListWidgetItem(
-                f"{a.asset_code}  {a.name}   {format_won(a.daily_rate_won)}/일   "
-                f"보증금 {format_won(a.deposit_won)}   {status}"
-            )
-            item.setData(Qt.ItemDataRole.UserRole, a.id)
-            flags = Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled
-            if not opt.available:
-                item.setToolTip(opt.reason)
-                if a.id not in self._selected:
-                    flags = Qt.ItemFlag.ItemIsUserCheckable  # 선택 불가(비활성)
-            item.setFlags(flags)
-            item.setCheckState(
+            selectable = opt.available or a.id in self._selected
+            check = QTableWidgetItem()
+            check.setData(Qt.ItemDataRole.UserRole, a.id)
+            flags = Qt.ItemFlag.ItemIsUserCheckable
+            if selectable:
+                flags |= Qt.ItemFlag.ItemIsEnabled  # 사용 불가 장비는 체크 비활성
+            check.setFlags(flags)
+            check.setCheckState(
                 Qt.CheckState.Checked if a.id in self._selected else Qt.CheckState.Unchecked
             )
-            self.asset_list.addItem(item)
-        self.asset_list.blockSignals(False)
+            table.setItem(r, 0, check)
+            values = [a.asset_code, a.name, format_won(a.daily_rate_won), format_won(a.deposit_won),
+                      "사용 가능" if opt.available else "사용 불가", "" if opt.available else opt.short_reason]
+            for c, value in enumerate(values, start=1):
+                cell = QTableWidgetItem(value)
+                cell.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                if c in (3, 4):
+                    cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if not opt.available:
+                    cell.setForeground(theme.color("danger") if c == 6 else muted)
+                    cell.setToolTip(opt.reason)
+                table.setItem(r, c, cell)
+        table.resizeColumnsToContents()
+        table.blockSignals(False)
         self._update_selected_label(options)
 
     def _update_selected_label(self, options=None) -> None:
@@ -253,7 +278,9 @@ class ReservationWizard(QDialog):
                 + "\n".join(o.reason for o in blocked) if blocked else ""
             )
 
-    def _on_item_changed(self, item: QListWidgetItem) -> None:
+    def _on_item_changed(self, item: QTableWidgetItem) -> None:
+        if item.column() != 0:
+            return
         asset_id = item.data(Qt.ItemDataRole.UserRole)
         if item.checkState() == Qt.CheckState.Checked:
             self._selected.add(asset_id)

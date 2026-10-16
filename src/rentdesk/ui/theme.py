@@ -107,11 +107,12 @@ STATUS_TONES: dict[str, str] = {
     ASSET_STATE_LABELS[AssetState.OVERDUE]: "danger",
     ASSET_STATE_LABELS[AssetState.MAINTENANCE]: "warning",
     ASSET_STATE_LABELS[AssetState.RETIRED]: "neutral",
-    "활성": "success",
+    "운영 중": "success",
     "연체": "danger",
     "대기": "accent",
     "처리 완료": "success",
     "미정산": "warning",
+    "출고 전": "accent",
     "완료": "success",
     "예정": "accent",
     "진행 중": "warning",
@@ -129,6 +130,8 @@ ICON_PATHS: dict[str, str] = {
                  "M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75",
     "reservations": "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6"
                     "a2 2 0 0 1 2-2z",
+    "calendar": "M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6"
+                "a2 2 0 0 1 2-2zM7 14h6M11 18h6",
     "rentals": "M8 3L4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4",
     "settlements": "M5 2h14v20l-3-2-2 2-2-2-2 2-2-2-3 2zM9 7h6M9 11h6M9 15h4",
     "maintenance": "M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94"
@@ -168,6 +171,18 @@ QFrame[banner="warning"] { background: $warning_soft; border-radius: 10px; }
 QFrame[banner="warning"] QLabel { color: $warning; font-weight: 600; }
 QFrame[banner="info"] { background: $accent_soft; border-radius: 10px; }
 QFrame[banner="info"] QLabel { color: $accent_text; font-weight: 600; }
+
+/* 범례 칩(예약 달력): 상태 색 계열별 알약 모양 */
+QLabel[chip] {
+    border-radius: 9px; padding: 1px 8px; font-size: 12px; font-weight: 600;
+    border: 1px solid transparent;
+}
+QLabel[chip="neutral"] { background: $neutral_soft; color: $neutral; border: 1px dashed $neutral; }
+QLabel[chip="accent"] { background: $accent_soft; color: $accent_text; }
+QLabel[chip="purple"] { background: $purple_soft; color: $purple; }
+QLabel[chip="danger"] { background: $danger_soft; color: $danger; }
+QLabel[chip="success"] { background: $success_soft; color: $success; }
+QLabel[chip="warning"] { background: $warning_soft; color: $warning; }
 
 /* 카드 */
 #Card, #StatCard { background: $surface; border: 1px solid $surface; border-radius: 16px; }
@@ -353,6 +368,13 @@ def set_tone(widget: QWidget, tone: str | None) -> None:
         repolish(widget)
 
 
+def set_chip(label: QWidget, tone: str) -> QWidget:
+    """알약 모양 범례 칩: neutral(점선) / accent / purple / danger / success / warning."""
+    label.setProperty("chip", tone)
+    repolish(label)
+    return label
+
+
 def set_variant(button: QWidget, variant: str) -> QWidget:
     """버튼 종류: primary(주요 동작, 화면당 1~2개) / danger(되돌리기 어려운 동작)."""
     button.setProperty("variant", variant)
@@ -395,7 +417,20 @@ def badge_colors(text: str) -> tuple[QColor, QColor] | None:
     return QColor(getattr(_current, f"{tone}_soft")), QColor(fg)
 
 
-class StatusBadgeDelegate(QStyledItemDelegate):
+class RowHighlightDelegate(QStyledItemDelegate):
+    """칸의 BackgroundRole(연체 행 강조 등)을 먼저 칠한다.
+
+    표에 QSS `::item` 규칙이 있으면 Qt 스타일이 칸 배경색을 무시하므로 여기서 직접 그린다.
+    """
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
+        brush = index.data(Qt.ItemDataRole.BackgroundRole)
+        if brush is not None:
+            painter.fillRect(option.rect, brush)
+        super().paint(painter, option, index)
+
+
+class StatusBadgeDelegate(RowHighlightDelegate):
     """표 칸의 상태 글자(예약확정·대여중·연체 등)를 알약 모양 배지로 그린다."""
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index) -> None:
@@ -404,6 +439,9 @@ class StatusBadgeDelegate(QStyledItemDelegate):
         if colors is None:
             super().paint(painter, option, index)
             return
+        brush = index.data(Qt.ItemDataRole.BackgroundRole)
+        if brush is not None:
+            painter.fillRect(option.rect, brush)
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
         opt.text = ""

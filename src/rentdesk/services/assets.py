@@ -120,7 +120,7 @@ class AssetService:
         if category is None:
             return repo.insert_category(self._conn, name)
         if category.is_archived:
-            raise ValidationError("category", f"보관 처리된 카테고리입니다: {category.name}")
+            raise ValidationError("category", f"숨김 처리된 카테고리입니다: {category.name}")
         return category.id
 
     # ------------------------------------------------------------------ assets
@@ -234,7 +234,7 @@ class AssetService:
                 return asset
             if repo.asset_has_out_items(self._conn, asset_id):
                 raise InvalidStateError(
-                    f"{asset.asset_code} 장비가 현재 대여 중이어서 은퇴 처리할 수 없습니다."
+                    f"{asset.asset_code} 장비가 현재 대여 중이어서 사용 중지할 수 없습니다."
                 )
             confirmed = repo.confirmed_orders_for_asset(self._conn, asset_id)
             if confirmed:
@@ -244,7 +244,7 @@ class AssetService:
                     for r in confirmed
                 )
                 raise InvalidStateError(
-                    f"{asset.asset_code} 장비에 확정된 예약이 남아 있어 은퇴 처리할 수 없습니다.\n"
+                    f"{asset.asset_code} 장비에 확정된 예약이 남아 있어 사용 중지할 수 없습니다.\n"
                     f"{lines}"
                 )
             repo.set_asset_lifecycle(self._conn, asset_id, LifecycleStatus.RETIRED)
@@ -276,7 +276,7 @@ class AssetService:
                 raise NotFoundError("장비를 찾을 수 없습니다.")
             if repo.asset_has_history(self._conn, asset_id):
                 raise InvalidStateError(
-                    "예약 또는 정비 이력이 있는 장비는 삭제할 수 없습니다. 은퇴 처리를 이용해주세요."
+                    "예약 또는 정비 이력이 있는 장비는 삭제할 수 없습니다. 사용 중지를 이용해주세요."
                 )
             repo.delete_asset(self._conn, asset_id)
             repo.insert_audit(

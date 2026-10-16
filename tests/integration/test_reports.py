@@ -39,14 +39,14 @@ def data(svc):
 def test_assets_report_filters(svc, data):
     all_rows = svc.reports.assets_report()
     assert [r[0] for r in all_rows.rows] == ["CAM-1", "LEN-1", "OLD-1"]
-    assert all_rows.rows[0][5:9] == (30_000, 100_000, "연체", "활성")
+    assert all_rows.rows[0][5:9] == (30_000, 100_000, "연체", "운영 중")
 
     lens = next(c for c in svc.assets.list_categories() if c.name == "렌즈")
     lens_active = svc.reports.assets_report(category_id=lens.id, lifecycle=LifecycleStatus.ACTIVE)
     assert [r[0] for r in lens_active.rows] == ["LEN-1"]
     retired = svc.reports.assets_report(lifecycle=LifecycleStatus.RETIRED)
     assert [r[0] for r in retired.rows] == ["OLD-1"]
-    assert "운영 상태: 은퇴" in retired.filters
+    assert "운영 상태: 사용 중지" in retired.filters
 
 
 def test_reservations_report_period_and_status(svc, data):
@@ -179,3 +179,11 @@ def test_export_permission_error_is_friendly_and_keeps_existing(svc, tmp_path):
     finally:
         os.chmod(folder, stat.S_IRWXU)
     assert existing.read_bytes() == b"keep"
+
+
+def test_settlement_report_includes_canceled_with_money_only(svc, data):
+    """U5: 돈이 오간 취소 예약은 정산 목록에 포함, 돈이 없던 취소 예약은 제외."""
+    svc.settlements.record(data["o2"].id, MoneyInput(kind=MoneyKind.RENTAL_RECEIPT, amount_won=10_000))
+    svc.reservations.cancel(data["o2"].id, cancel_fee_won=3_000)
+    t = svc.reports.settlement_report(date(2026, 10, 1), date(2026, 10, 31))
+    assert data["o2"].order_no in [r[0] for r in t.rows]

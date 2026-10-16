@@ -10,10 +10,12 @@ from rentdesk.platform.preferences import LocalPreferences
 from rentdesk.services.assets import AssetService
 from rentdesk.services.availability import AvailabilityService
 from rentdesk.services.backup import BackupService
+from rentdesk.services.calendar import CalendarService
 from rentdesk.services.checkout import CheckoutService
 from rentdesk.services.common import Clock, current_time, default_clock
 from rentdesk.services.customers import CustomerService
 from rentdesk.services.dashboard import DashboardService
+from rentdesk.services.extensions import ExtensionService
 from rentdesk.services.licensing import LicenseService
 from rentdesk.services.maintenance import MaintenanceService
 from rentdesk.services.reports import ReportService
@@ -35,8 +37,10 @@ class AppContext:
     customers: CustomerService = field(init=False)
     availability: AvailabilityService = field(init=False)
     reservations: ReservationService = field(init=False)
+    calendar: CalendarService = field(init=False)
     checkout: CheckoutService = field(init=False)
     returns: ReturnService = field(init=False)
+    extensions: ExtensionService = field(init=False)
     settlements: SettlementService = field(init=False)
     maintenance: MaintenanceService = field(init=False)
     settings: SettingsService = field(init=False)
@@ -51,8 +55,10 @@ class AppContext:
         self.customers = CustomerService(c, k)
         self.availability = AvailabilityService(c, k)
         self.reservations = ReservationService(c, k)
+        self.calendar = CalendarService(c, k)
         self.checkout = CheckoutService(c, k)
         self.returns = ReturnService(c, k)
+        self.extensions = ExtensionService(c, k)
         self.settlements = SettlementService(c, k)
         self.maintenance = MaintenanceService(c, k)
         self.settings = SettingsService(c, k)

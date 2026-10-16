@@ -5,8 +5,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from datetime import datetime
+
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QGuiApplication, QKeySequence
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
@@ -23,10 +26,12 @@ from PySide6.QtWidgets import (
 )
 
 from rentdesk.context import AppContext
+from rentdesk.services.auto_backup import AutoBackupSettings
 from rentdesk.services.search import RESULT_KIND_LABELS, ResultKind, SearchResult
 from rentdesk.ui import feedback, theme
 from rentdesk.ui.pages.assets import AssetsPage
 from rentdesk.ui.pages.base import Page
+from rentdesk.ui.pages.calendar import CalendarPage
 from rentdesk.ui.pages.customers import CustomersPage
 from rentdesk.ui.pages.dashboard import DashboardPage
 from rentdesk.ui.pages.maintenance import MaintenancePage
@@ -45,6 +50,7 @@ MIN_HEIGHT = 700
 # (page key, 메뉴 이름, 화면 클래스)
 PAGES: list[tuple[str, str, type[Page]]] = [
     ("dashboard", "대시보드", DashboardPage),
+    ("calendar", "예약 달력", CalendarPage),
     ("assets", "장비 관리", AssetsPage),
     ("customers", "고객 관리", CustomersPage),
     ("reservations", "예약 관리", ReservationsPage),
@@ -92,8 +98,7 @@ class MainWindow(QMainWindow):
         self.ctx = ctx
         title = WINDOW_TITLE + (" [예제 데이터 모드]" if ctx.is_demo else "")
         self.setWindowTitle(title)
-        self.resize(DEFAULT_WIDTH, DEFAULT_HEIGHT)
-        self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
+        self._fit_to_screen()
 
         central = QWidget(self)
         root = QHBoxLayout(central)
@@ -168,6 +173,19 @@ class MainWindow(QMainWindow):
         self._install_shortcuts()
         self.update_backup_banner()
         self.menu_list.setCurrentRow(0)
+
+    def _fit_to_screen(self) -> None:
+        """기본·최소 크기를 화면 작업 영역 안으로 줄인다(배율 자동 조정 후에도 모자랄 때 대비)."""
+        screen = QGuiApplication.primaryScreen()
+        avail = screen.availableGeometry() if screen is not None else None
+        if avail is None or avail.width() <= 0 or avail.height() <= 0:
+            self.setMinimumSize(MIN_WIDTH, MIN_HEIGHT)
+            self.resize(DEFAULT_WIDTH, DEFAULT_HEIGHT)
+            return
+        frame_w, frame_h = 20, 45  # 창 테두리·제목 표시줄 여유
+        max_w, max_h = avail.width() - frame_w, avail.height() - frame_h
+        self.setMinimumSize(min(MIN_WIDTH, max_w), min(MIN_HEIGHT, max_h))
+        self.resize(min(DEFAULT_WIDTH, max_w), min(DEFAULT_HEIGHT, max_h))
 
     def _build_sidebar(self) -> QFrame:
         side = QFrame()
@@ -259,6 +277,15 @@ class MainWindow(QMainWindow):
             menu.addAction(a)
         menu.addSeparator()
         menu.addAction(quit_action)
+        about = QAction("프로그램 정보·문의", self)
+        about.triggered.connect(self.show_about)
+        help_menu = self.menuBar().addMenu("도움말")
+        help_menu.addAction(about)
+
+    def show_about(self) -> None:
+        from rentdesk.ui.dialogs.about_dialog import AboutDialog
+
+        AboutDialog(self).exec()
 
     # ------------------------------------------------------------------ Navigator
 
@@ -278,6 +305,10 @@ class MainWindow(QMainWindow):
 
     def update_backup_banner(self) -> None:
         text = None if self.ctx.is_demo else feedback.run(self, self.ctx.backup.reminder)
+        if not self.ctx.is_demo and self.ctx.preferences is not None:
+            notice = AutoBackupSettings(self.ctx.preferences).notice  # 지난 종료 때 자동 백업 문제
+            if notice:
+                text = f"{notice}\n{text}" if text else notice
         self.backup_banner_label.setText(text or "")
         self.backup_banner.setVisible(bool(text))
 
@@ -307,10 +338,12 @@ class MainWindow(QMainWindow):
         self.goto("customers")
         self.page_by_key["customers"].open_customer(customer_id)
 
-    def new_reservation(self, customer_id: int | None = None) -> None:
+    def new_reservation(self, customer_id: int | None = None, *, asset_ids: Sequence[int] = (),
+                        start_at: datetime | None = None, due_at: datetime | None = None) -> None:
         from rentdesk.ui.dialogs.reservation_wizard import ReservationWizard
 
-        dlg = ReservationWizard(self.ctx, parent=self, customer_id=customer_id)
+        dlg = ReservationWizard(self.ctx, parent=self, customer_id=customer_id,
+                                asset_ids=asset_ids, start_at=start_at, due_at=due_at)
         if dlg.exec() and dlg.result_order:
             self.data_changed()
 

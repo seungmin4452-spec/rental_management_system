@@ -85,6 +85,11 @@ class CheckoutDialog(QDialog):
         self.errors.add_row("외관/구성품 메모", self.note, "note")
         self.errors.add_row("받은 대여료(선택)", self.receipt, "rental_receipt_won")
         self.errors.add_row("받은 보증금(선택)", self.deposit, "deposit_in_won")
+        self.fill_btn = QPushButton("남은 금액 채우기")
+        self.fill_btn.setToolTip("선입금을 뺀 남은 대여료·보증금을 입력칸에 채웁니다. 실제로 받은 금액만 기록하세요.")
+        self.fill_btn.clicked.connect(self.fill_remaining)
+        form.addRow("", self.fill_btn)
+        self._remaining = (0, 0)
         self.errors.add_row("결제수단(기록용)", self.method, "payment_method")
 
         self.submit_btn = theme.set_variant(QPushButton("출고 확정"), "primary")
@@ -109,15 +114,26 @@ class CheckoutDialog(QDialog):
             return
         summary = self.ctx.settlements.summary(self.order_id)
         q = preview.quote
+        self._remaining = (
+            max(0, q.expected_total_rental_fee_won - summary.net_rental_receipts_won),
+            max(0, q.expected_deposit_won - summary.deposit_held_won),
+        )
+        self.fill_btn.setEnabled(any(self._remaining))
         self.amounts.setText(
             f"받을 대여료: <b>{format_won(q.expected_total_rental_fee_won)}</b>"
             f" ({q.rental_days}일, 할인 {format_won(q.discount_won)} 반영) · "
             f"받을 보증금: <b>{format_won(q.expected_deposit_won)}</b> · "
-            f"현재까지 입금액: 대여료 {format_won(summary.net_rental_receipts_won)}, "
-            f"보증금 {format_won(summary.deposit_held_won)}"
+            f"선입금: 대여료 {format_won(summary.net_rental_receipts_won)}, "
+            f"보증금 {format_won(summary.deposit_held_won)} · "
+            f"남은 금액: 대여료 <b>{format_won(self._remaining[0])}</b>, "
+            f"보증금 <b>{format_won(self._remaining[1])}</b>"
         )
         self.blockers.setText("\n".join(preview.blockers))
         self.submit_btn.setEnabled(preview.can_checkout)
+
+    def fill_remaining(self) -> None:
+        self.receipt.setValue(self._remaining[0])
+        self.deposit.setValue(self._remaining[1])
 
     def submit(self) -> bool:
         self.errors.clear()

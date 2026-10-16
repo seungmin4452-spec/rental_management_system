@@ -23,6 +23,7 @@ from rentdesk.domain.errors import (
 from rentdesk.domain.models import (
     PRE_CHECKOUT_STATUSES,
     Asset,
+    ChargeKind,
     ItemStatus,
     LifecycleStatus,
     OrderStatus,
@@ -38,6 +39,7 @@ from rentdesk.services.common import Clock, clean_optional, current_time, defaul
 from rentdesk.services.settings import read_policy
 
 MAX_ITEMS_PER_ORDER = 30
+CANCEL_FEE_DESCRIPTION = "예약 취소 수수료"
 
 
 @dataclass(frozen=True)
@@ -297,8 +299,13 @@ class ReservationService:
                 self._confirm_in_txn(order_id, now)
         return self.get_order(order_id)
 
-    def cancel(self, order_id: int) -> RentalOrder:
-        """출고 전 예약만 취소. 품목은 CANCELED, 청구 원장은 생성되지 않는다."""
+    def cancel(self, order_id: int, *, cancel_fee_won: object = 0) -> RentalOrder:
+        """출고 전 예약만 취소. 품목은 CANCELED.
+
+        cancel_fee_won > 0이면 취소 수수료를 청구 원장에 '조정'(설명 "예약 취소 수수료")으로 남긴다.
+        받은 선입금·보증금의 환급은 정산 화면의 '정산 마무리'로 처리한다(USABILITY_PLAN U5).
+        """
+        fee = validate_won("cancel_fee_won", cancel_fee_won, label="취소 수수료")
         now = current_time(self._clock)
         with transaction(self._conn):
             order = repo.get_order(self._conn, order_id)
@@ -316,9 +323,14 @@ class ReservationService:
                 self._conn, order_id, ItemStatus.RESERVED, ItemStatus.CANCELED
             )
             repo.set_order_status(self._conn, order_id, OrderStatus.CANCELED, now=now)
+            if fee:
+                repo.insert_charge(
+                    self._conn, order_id=order_id, rental_item_id=None, kind=ChargeKind.ADJUSTMENT,
+                    amount_won=fee, description=CANCEL_FEE_DESCRIPTION, now=now,
+                )
             repo.insert_audit(
                 self._conn, entity_type="rental_order", entity_id=order_id, action="CANCEL",
-                description=order.order_no, now=now,
+                description=f"{order.order_no} 수수료 {fee}" if fee else order.order_no, now=now,
             )
         return self.get_order(order_id)
 
@@ -425,7 +437,7 @@ class ReservationService:
         if customer is None:
             raise ValidationError("customer_id", "고객을 선택해주세요.")
         if customer.is_archived and not allow_archived:
-            raise ValidationError("customer_id", "보관 처리된 고객으로는 예약할 수 없습니다.")
+            raise ValidationError("customer_id", "거래 중지(숨김)된 고객으로는 예약할 수 없습니다.")
 
     def _check_assets(self, asset_ids: Sequence[int]) -> dict[int, Asset]:
         assets = repo.get_assets(self._conn, list(asset_ids))
@@ -435,7 +447,7 @@ class ReservationService:
         retired = [a.asset_code for a in assets.values() if a.lifecycle_status != LifecycleStatus.ACTIVE]
         if retired:
             raise ValidationError(
-                "asset_ids", f"은퇴 처리된 장비는 예약할 수 없습니다: {', '.join(sorted(retired))}"
+                "asset_ids", f"사용 중지된 장비는 예약할 수 없습니다: {', '.join(sorted(retired))}"
             )
         return assets
 

@@ -122,7 +122,7 @@ class CustomerService:
                 raise NotFoundError("고객을 찾을 수 없습니다.")
             if repo.customer_has_orders(self._conn, customer_id):
                 raise InvalidStateError(
-                    "예약 이력이 있는 고객은 삭제할 수 없습니다. 보관 처리를 이용해주세요."
+                    "예약 이력이 있는 고객은 삭제할 수 없습니다. 거래 중지(숨김)를 이용해주세요."
                 )
             repo.delete_customer(self._conn, customer_id)
             repo.insert_audit(

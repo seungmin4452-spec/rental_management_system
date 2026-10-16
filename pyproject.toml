@@ -34,7 +34,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "rentdesk.persistence.migrations" = ["*.sql"]
-"rentdesk" = ["resources/icons/*.png"]
+"rentdesk" = ["resources/icons/*.png", "resources/support/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

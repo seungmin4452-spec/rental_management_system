@@ -25,6 +25,8 @@ class RentalsPage(Page):
         checkout_btn.clicked.connect(lambda: self._selected(self.to_checkout, self.open_checkout))
         return_btn = QPushButton("반납 처리")
         return_btn.clicked.connect(lambda: self._selected(self.to_return, self.open_return))
+        extend_btn = QPushButton("연장")
+        extend_btn.clicked.connect(lambda: self._selected(self.to_return, self.open_extension))
         detail_btn = QPushButton("예약 상세")
         detail_btn.clicked.connect(self._detail)
 
@@ -39,6 +41,7 @@ class RentalsPage(Page):
         head2.addWidget(QLabel("<b>반납 대기 (대여 중)</b> — 일부 장비만 먼저 반납할 수 있습니다."))
         head2.addStretch(1)
         head2.addWidget(return_btn)
+        head2.addWidget(extend_btn)
         head2.addWidget(detail_btn)
         lay.addLayout(head2)
         lay.addWidget(self.to_return, 1)
@@ -90,4 +93,10 @@ class RentalsPage(Page):
         from rentdesk.ui.dialogs.return_dialog import ReturnDialog
 
         if ReturnDialog(self.ctx, order_id, self).exec():
+            self.nav.data_changed()
+
+    def open_extension(self, order_id: int) -> None:
+        from rentdesk.ui.dialogs.extension_dialog import ExtensionDialog
+
+        if ExtensionDialog(self.ctx, order_id, self).exec():
             self.nav.data_changed()

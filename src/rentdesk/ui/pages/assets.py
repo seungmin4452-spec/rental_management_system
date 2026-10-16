@@ -20,7 +20,7 @@ from rentdesk.ui.dialogs.asset_dialog import AssetDialog
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable, empty_hint
 
-LIFECYCLE_LABELS = {LifecycleStatus.ACTIVE: "활성", LifecycleStatus.RETIRED: "은퇴"}
+LIFECYCLE_LABELS = {LifecycleStatus.ACTIVE: "운영 중", LifecycleStatus.RETIRED: "사용 중지"}
 
 
 class AssetsPage(Page):
@@ -34,7 +34,7 @@ class AssetsPage(Page):
         self.query.textChanged.connect(self.refresh)
         self.category = QComboBox()
         self.category.currentIndexChanged.connect(self.refresh)
-        self.include_retired = QCheckBox("은퇴 장비 포함")
+        self.include_retired = QCheckBox("사용 중지 장비 포함")
         self.include_retired.toggled.connect(self.refresh)
         filters = QHBoxLayout()
         filters.addWidget(self.query, 1)
@@ -52,7 +52,7 @@ class AssetsPage(Page):
         self.new_btn = theme.set_variant(QPushButton("장비 등록"), "primary")
         self.edit_btn = QPushButton("수정")
         self.detail_btn = QPushButton("상세/이력")
-        self.retire_btn = theme.set_variant(QPushButton("은퇴 처리"), "danger")
+        self.retire_btn = theme.set_variant(QPushButton("사용 중지"), "danger")
         self.delete_btn = theme.set_variant(QPushButton("삭제"), "danger")
         self.new_btn.clicked.connect(self.create)
         self.edit_btn.clicked.connect(self.edit)
@@ -118,7 +118,7 @@ class AssetsPage(Page):
         for b in (self.edit_btn, self.detail_btn, self.retire_btn, self.delete_btn):
             b.setEnabled(asset is not None)
         retired = asset is not None and asset.lifecycle_status == LifecycleStatus.RETIRED
-        self.retire_btn.setText("재활성화" if retired else "은퇴 처리")
+        self.retire_btn.setText("다시 사용" if retired else "사용 중지")
 
     def create(self) -> None:
         dlg = AssetDialog(self.ctx, parent=self)
@@ -137,10 +137,10 @@ class AssetsPage(Page):
         def run(asset: Asset) -> None:
             if asset.lifecycle_status == LifecycleStatus.RETIRED:
                 action = lambda: self.ctx.assets.reactivate_asset(asset.id)  # noqa: E731
-                text = f"{asset.asset_code}을(를) 다시 활성화합니다."
+                text = f"{asset.asset_code}을(를) 다시 사용합니다. 신규 예약에 다시 표시됩니다."
             else:
                 action = lambda: self.ctx.assets.retire_asset(asset.id)  # noqa: E731
-                text = (f"{asset.asset_code}을(를) 은퇴 처리합니다. 은퇴 장비는 신규 예약에 표시되지 않으며 "
+                text = (f"{asset.asset_code}을(를) 사용 중지합니다. 사용 중지한 장비는 신규 예약에 표시되지 않으며 "
                         "이력은 보존됩니다.")
             if feedback.confirm(self, text, "운영 상태 변경") and feedback.run(self, action):
                 self.nav.data_changed()

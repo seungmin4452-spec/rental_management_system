@@ -5,10 +5,16 @@ from __future__ import annotations
 from PySide6.QtWidgets import QCheckBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from rentdesk.domain.display import format_dt, format_won
-from rentdesk.domain.models import ORDER_STATUS_LABELS
+from rentdesk.domain.models import ORDER_STATUS_LABELS, OrderStatus
 from rentdesk.ui import feedback, theme
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable
+
+
+def _settle_label(row) -> str:
+    if row.order.status == OrderStatus.CONFIRMED:
+        return "출고 전"  # 선입금만 받은 예약(U5)
+    return "완료" if row.summary.is_settled else "미정산"
 
 
 class SettlementsPage(Page):
@@ -28,11 +34,12 @@ class SettlementsPage(Page):
         top.addStretch(1)
         top.addWidget(self.count)
         self.table = DataTable(
-            ["예약번호", "고객", "상태", "출고", "청구 합계", "대여료 순수금", "미수금", "보증금 보유", "정산"],
+            ["예약번호", "고객", "상태", "출고", "청구 합계", "받은 대여료", "미수금", "보증금 보유", "정산"],
             badge_columns=(2, 8),
         )
         self.table.activated_key.connect(lambda k: self.open_settlement(int(k)))
-        note = QLabel("반납 완료와 정산 완료는 별개입니다. 미수금·보증금 보유액이 모두 0원이어야 정산 완료입니다.")
+        note = QLabel("반납 완료와 정산 완료는 별개입니다. 미수금·보증금 보유액이 모두 0원이어야 정산 완료입니다. "
+                      "선입금만 받은 출고 전 예약은 '미정산만 보기'를 끄면 보입니다.")
         theme.set_tone(note, "muted")
         lay = QVBoxLayout(self)
         lay.addLayout(top)
@@ -42,13 +49,14 @@ class SettlementsPage(Page):
 
     def refresh(self) -> None:
         rows = self.ctx.settlements.list_rows(unsettled_only=self.unsettled_only.isChecked())
-        unsettled = {r.order.id for r in rows if not r.summary.is_settled}
+        unsettled = {r.order.id for r in rows
+                     if not r.summary.is_settled and r.order.status != OrderStatus.CONFIRMED}
         self.table.set_rows([
             (r.order.id, [r.order.order_no, r.customer_name, ORDER_STATUS_LABELS[r.order.status],
                           format_dt(r.order.actual_checkout_at), format_won(r.summary.charge_total_won),
                           format_won(r.summary.net_rental_receipts_won),
                           format_won(r.summary.amount_due_won), format_won(r.summary.deposit_held_won),
-                          "완료" if r.summary.is_settled else "미정산"])
+                          _settle_label(r)])
             for r in rows
         ], highlight=lambda k: k in unsettled, align_right=(4, 5, 6, 7))
         self.count.setText(f"{len(rows)}건")

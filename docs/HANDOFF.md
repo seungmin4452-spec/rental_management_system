@@ -1,96 +1,110 @@
 # 작업 인수인계 문서 (HANDOFF)
 
-> 이 문서는 마일스톤이 끝날 때마다 **덮어써서 최신 상태만** 남긴다. 과거 마일스톤의 상세 내역은 git 커밋 로그와 `OPEN_QUESTIONS.md`에서 확인한다.
-> 다른 터미널(다른 맥, 새 세션 등)에서 이어서 작업하려면 아래 "환경 재현" 섹션만 그대로 따라 하면 된다.
-> M0~M4 전체 요약은 `docs/PROGRESS_REPORT.md` 참고.
+> 이 문서는 단계가 끝날 때마다 **덮어써서 최신 상태만** 남긴다. 지난 내역은 git 커밋 로그, `docs/PROGRESS_REPORT.md`(M0~M4 요약), `USABILITY_PLAN.md` "진행 기록"(M4.5 단계별), `OPEN_QUESTIONS.md`(결정 근거)에서 확인한다.
+> 새 세션은 **이 문서 → `CLAUDE.md` → `USABILITY_PLAN.md` → `TASKS.md`** 순서로 읽으면 바로 이어서 작업할 수 있다.
 
-## 현재 상태: M4 코드·macOS 로컬 빌드 완료, 배포 서명·Windows 빌드·실기기 검증 남음
+## 현재 상태 (2026-10-16): M4.5 사용성 개선 U0~U6·U9 완료, U7·U8·U10 남음
 
-- 원격 저장소: `https://github.com/seungmin4452-spec/rental_management_system.git` (브랜치 `main`)
-- Windows 검증(CI·실기기)은 전체 개발 완료 후 일괄 진행하기로 결정 — 그 전까지 Windows 검증 완료로 보지 않는다.
-- M4 미완료 항목(TASKS 미체크): Developer ID 서명·공증 실행, Windows 네이티브 빌드, Python 미설치 PC 설치 검증, Mac↔Windows 실제 왕복 복원, CP-02~CP-10.
+- 원격 저장소: `https://github.com/seungmin4452-spec/rental_management_system.git` (`main`은 `e477eda`까지, M4.5 작업은 브랜치 `m4.5-usability`).
+- U0~U6·U9(+반납 창 연체료 문구 정리)는 Windows PC에서 작업해 브랜치 **`m4.5-usability`**로 커밋·푸시했다(`main`에는 아직 합치지 않음). 다른 PC에서는 `git fetch && git switch m4.5-usability`로 이어간다.
+- M4.5는 크몽 판매 전 사용자 관점 검토에서 나온 개선 단계다. 상세 요구사항·완료 조건·진행 기록은 **`USABILITY_PLAN.md`**, 체크리스트는 `TASKS.md`의 "M4.5".
+- M4 미완료 항목(Developer ID 서명·공증, Windows 네이티브 빌드, Python 미설치 PC 설치 검증, Mac↔Windows 실제 왕복 복원, CP-02~CP-10)과 M5 출시 항목은 그대로 남아 있다.
+
+## 다음 할 일
+
+| 단계 | 내용 | 시작 조건 |
+|---|---|---|
+| U10 | 엑셀 일괄 가져오기(장비·고객) | 바로 시작 가능 |
+| U7 | 대여일수·연체료 계산 방식 선택 | **사용자 결정 필요**: 지금 방식(24시간마다 1일 올림)만 둘지, 날짜 기준 방식도 넣을지, 넣는다면 "1박 2일"을 1일/2일 중 무엇으로 볼지 |
+| U8 | 대여확인서 출력(PDF·인쇄) | **사용자 결정 필요**: 기본 약관 문구(파손·분실 책임, 연체료, 보증금 반환 조건) 초안을 Claude가 써서 확인받을지 |
+
+U9는 완료. 다음은 U10(바로 시작 가능), U7·U8은 사용자 결정 후. 각 단계는 `USABILITY_PLAN.md`의 체크리스트대로 구현하고, 끝나면 그 파일의 "진행 기록"과 `TASKS.md` 체크박스, 이 문서를 갱신한다.
 
 ## 환경 재현
+
+### Windows 11 (현재 작업 PC)
+
+```powershell
+cd C:\Users\SMSHIN\git\rental_management_system
+py install 3.12                      # 이미 3.12.10 설치됨. 3.14/3.11은 PySide6 6.7.3과 맞지 않음
+py -V:3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1          # 막히면: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+
+python -m pytest -q --deselect tests/unit/test_licensing.py::test_seller_script_keygen_issue_verify
+python -m rentdesk                    # 라이선스 창 → "예제 데이터로 체험"
+```
+
+- 이 PC 주의: 이 저장소 폴더는 상위 폴더 `C:\Users\SMSHIN\git`(다른 프로젝트 `swkim128/pignai` 저장소) 안에 있지만, 자체 `.git`이 있어 독립된 저장소로 동작한다.
+- Bash 도구에서 실행할 때는 `.venv/Scripts/python.exe -m pytest ...`처럼 가상환경 파이썬을 직접 지정한다.
+
+### macOS (원래 개발 맥북)
 
 ```bash
 git clone https://github.com/seungmin4452-spec/rental_management_system.git
 cd rental_management_system
 python3.12 -m venv .venv && source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e '.[dev,build]'      # build = PyInstaller (M4부터 사용)
-
-QT_QPA_PLATFORM=offscreen python -m pytest -q   # 현재 387 passed (Windows에서는 POSIX 권한 테스트 3개 skip 예정)
-python -m rentdesk                               # 실제 GUI 실행 → 라이선스 확인 화면이 먼저 뜸
-scripts/build_macos.sh                           # .app + .dmg (ad-hoc 서명, 공증 생략)
+python -m pip install -e '.[dev,build]'
+QT_QPA_PLATFORM=offscreen python -m pytest -q
+python -m rentdesk
+scripts/build_macos.sh                # .app + .dmg (ad-hoc 서명, 공증 생략)
 ```
 
-### 라이선스 (중요)
-
-- 판매자 서명 키: **`~/RentDeskSellerKeys/signing_key.json`** (이 맥북에만 있음, 권한 600, 저장소 밖). 공개키는 `src/rentdesk/license_public_key.py`.
-  - **잃어버리면 현재 공개키로 빌드한 앱용 라이선스를 더 발급할 수 없음** → 암호화 USB 등에 오프라인 사본 보관.
-  - 다른 맥에서 작업할 때 키를 Git/메신저로 옮기지 말 것. 발급은 이 맥북에서만.
-- 이 맥북용 개발 라이선스: `~/RentDeskSellerKeys/dev_macbook_license.json` (기기 코드 `33AY-UARG-2DOD-HVQS-U4CF`).
-  `python -m rentdesk` 첫 화면 → "라이선스 파일 불러오기…"로 등록.
-- 발급/이전 절차: `docs/license_operations.md`.
-
-## M4에서 완료한 것 (파일 기준)
-
-- `services/backup.py` (신규) — Online Backup API 스냅샷 → ZIP(`manifest.json`+`rentdesk.db`). manifest에 제품/포맷/스키마/앱 버전, UTC 생성 시각, SHA-256, 크기, 참고용 OS, 표별 건수·청구/금전 합계. 복원 전 7단계 검증(`inspect_backup`), 파일 교체+실패 시 원복(`restore_database`), 보호 백업 포함 전체 흐름(`restore_with_protection`), 마지막 백업 시각·7일 권장 안내(`BackupService`).
-- `services/licensing.py` (신규) — Ed25519 검증, 기기 코드(20자), 상태별 한국어 사유, `LicenseService.install()`(검증 통과 시에만 원자적 저장).
-- `license_public_key.py` (신규), `scripts/generate_license.py` (신규, keygen/pubkey/issue/verify, 저장소 안 키 경로 거부, 발급 대장 CSV).
-- `persistence/db.py` — `integrity_problems()`, `DatabaseIntegrityError`; `open_database`가 마이그레이션 전후 `integrity_check`.
-- `platform/paths.py` — `configure_app_identity()`(조직명 비움 → 경로 중복 해소), 앱 데이터 폴더 POSIX `700`, `get_preferences_path()`. `platform/preferences.py`(신규, 기기별 기본 백업 폴더).
-- `app.py` — `AppPaths`, `AppController`(라이선스 게이트 → 실제/예제 모드, 복원 후 화면 재시작), 시작 시 손상 DB 복구(`recover_corrupt_database`), 패키징 자기 점검 `--self-check <json>`.
-- `ui/` — 설정 화면 "데이터 백업·복원"·"라이선스" 그룹(스크롤 영역으로 변경), `ui/backup_actions.py`, `ui/dialogs/license_dialog.py`(LicensePanel/LicenseDialog), 메인 창 백업 권장 배너.
-- 패키징 — `packaging/pyinstaller/rentdesk.spec`, `packaging/macos/{sign_app.sh,create_dmg.sh,notarize.sh,entitlements.plist}`, `packaging/windows/rentdesk.iss`, `scripts/{build_macos.sh,smoke_macos.sh,build_windows.ps1,smoke_windows.ps1}`, CI `package-macos`/`package-windows` 잡.
-- 앱 아이콘 — `scripts/make_icons.py`로 생성한 `.icns`/`.ico`/창 아이콘 PNG를 spec·Inno Setup·앱 실행에 연결(자기 점검에서 로드 확인).
-- 문서 — `docs/install_macos.md`, `docs/install_windows.md`, `docs/license_operations.md`. 결정 사항은 `OPEN_QUESTIONS.md` "M4" 표.
-- 버전 단일화: `rentdesk.__version__`(0.1.0)을 pyproject·번들·설치파일·manifest가 공유.
-
-### DB 마이그레이션
-
-- **없음** (schema version 2 유지). `app_settings`에 `last_backup_at_utc` 키를 필요 시 upsert(키-값 테이블이라 스키마 변경 없음). 기존 `default_backup_dir` 키는 사용하지 않고 백업 스냅샷에서 null 처리.
-
-### 실행한 테스트 명령 및 결과
+### 테스트 현황
 
 | 명령 | 환경 | 결과 |
 |---|---|---|
-| `QT_QPA_PLATFORM=offscreen python -m pytest -q` | macOS 26.6.2 arm64 로컬 맥북, Python 3.12.14, SQLite 3.53.4, PySide6 6.7.3 | `384 passed` (3회 반복 모두 통과) |
-| `SKIP_TESTS=1 scripts/build_macos.sh` | 동일, PyInstaller 6.10.0 | `.app`(103MB) + `RentDeskLite_0.1.0_macos-arm64.dmg`(41MB) 생성, ad-hoc 서명 `codesign --verify --deep --strict` 통과, 번들 `--self-check` ok, `hdiutil verify` 통과. 첫 빌드에서 `_cffi_backend` 누락을 스모크가 잡아 spec 수정 |
-| `generate_license.py issue/verify` | 동일 | 이 맥북 기기 코드로 발급 → 앱 내장 공개키 기준 `VALID` |
-| Developer ID 서명·공증·Gatekeeper | — | **미실행**(인증서·Apple 계정 없음) |
-| Windows CI / 빌드 / 실기기 | — | **미확인** (전체 개발 완료 후 일괄 검증 예정) |
+| `pytest -q --deselect tests/unit/test_licensing.py::test_seller_script_keygen_issue_verify` | Windows 11 x64 (10.0.26200), Python 3.12.10, PySide6 6.7.3 | **491 passed, 3 skipped** (U9 완료 시점) |
+| 위에서 뺀 1개 | 같은 PC | **실패(기존 문제, U0~U6과 무관)**: 판매자 스크립트 `generate_license.py`가 한국어 Windows 콘솔 인코딩(cp949)으로 출력하는데 테스트가 UTF-8로 읽음. Windows에서 라이선스를 발급하면 같은 문제가 날 수 있음. 아직 고치지 않음 |
+| `python -m rentdesk --self-check <json>` | 같은 PC | ok |
+| macOS 전체 테스트 | — | M4 시점 387 passed. **U0~U6·U9 이후 macOS에서는 아직 안 돌림** |
 
-M4 신규 테스트:
+## 라이선스 (중요)
 
-| 범위 | 테스트 |
-|---|---|
-| T-19 실행 중 백업→복원 건수·합계·한글·UTC 시각, manifest·절대경로 미포함, 덮어쓰기·권한 오류, 이전 스키마 백업 마이그레이션, 다른 OS 표기 백업 | `tests/integration/test_backup.py` |
-| T-20 손상 백업 12종(ZIP 아님/잘림/해시 불일치/해시 맞는 손상 DB/manifest 누락·변조/제품·포맷·스키마/합계 변조/경로 조작) → 현재 DB 바이트 동일, 교체 후 열기 실패 원복 | `tests/integration/test_backup.py` |
-| T-22 서명·내용·기기 코드 변조, 다른 키, 다른 기기, 만료, 형식 오류, 설치 실패 시 기존 유지, Mac 라이선스를 Windows에 복사, 판매자 스크립트 | `tests/unit/test_licensing.py` |
-| T-25 쓰기 트랜잭션 중 프로세스 강제 종료 → 재실행 무결성·커밋 데이터만 유지, 손상 DB 감지·원본 보존·백업 복구 | `tests/integration/test_crash_recovery.py` |
-| 경로 중복 해소·사용자 전용 권한·로그 수준·기기별 설정 | `tests/cross_platform/test_paths.py` |
-| 설정 화면 백업/복원·라이선스 패널, 라이선스 게이트(실데이터 무변경), 복원 후 화면 재시작, 자기 점검 | `tests/ui_smoke/test_m4_ui.py` |
+- 판매자 서명 키는 **맥북의 `~/RentDeskSellerKeys/signing_key.json`에만** 있다(저장소 밖). 공개키는 `src/rentdesk/license_public_key.py`. 키를 Git·메신저로 옮기지 않는다. 발급은 맥북에서만.
+- **`keygen`으로 키를 새로 만들지 않는다**(공개키가 바뀌면 기존 라이선스가 모두 무효).
+- Windows PC에는 라이선스가 없다. 사용자는 **예제 데이터 모드로만 테스트하기로 했다**(테스트용 키를 만들어 우회하는 방식은 사용자가 원하지 않아 되돌림).
+- 재발급 정책: 사용권 이전·재발급 **건당 10,000원**(`docs/license_operations.md`).
 
-### 직접 확인해 주세요 (자동화로 대체 불가)
+## 이번 세션(2026-10-16)의 사용자 결정
 
-- `python -m rentdesk` → 라이선스 화면 → 개발 라이선스 등록 → 설정 > 백업 파일 만들기 → 장비 추가 → 백업에서 복원(추가한 장비가 사라지고 `backups/pre_restore_*.zip` 생성) 흐름.
-- `dist/RentDeskLite_0.1.0_macos-arm64.dmg`를 열어 앱을 응용 프로그램에 복사 후 실행(ad-hoc 서명이라 Gatekeeper가 막을 수 있음 — 개발 확인용, 고객 배포 금지).
-- 개발 중 생긴 옛 데이터 폴더 `~/Library/Application Support/RentDeskLite/RentDeskLite/`는 더 이상 쓰지 않음(자동 이전 안 함). 필요 없으면 삭제.
-- M3에서 남은 수동 점검 2개(실제 화면 사용성, Retina/다크 모드/단축키)도 여전히 미체크.
+- Windows 코드 서명 인증서는 사지 않는다(미서명 출시 유지).
+- 라이선스 발급 대기는 감수하고, 재발급은 1만원.
+- 화면 배율은 앱이 PC마다 자동으로 맞추고 설정에서 고를 수도 있게(U0).
+- 검토의 "실제 업무 불편(2번)·화면(3번)·용어(4번)"을 M4.5 단계로 만들어 개발. 기존 P1 백로그의 캘린더·엑셀 가져오기·대여확인서·연장·예약금·자동 백업·요금제 세분화를 출시 전 범위로 올림(PRD 2.2 표기 완료).
+- 응답은 한국어로.
 
-### 미완료/주의사항
+## U0~U6·U9에서 바뀐 것 (요약 — 상세는 `USABILITY_PLAN.md`)
 
-- **결정 필요(사용자)**: Apple Developer 계정·Developer ID 인증서, 정식 번들 ID(현재 `com.example.rentdesklite`), 라이선스 이전 약관.
-- `entitlements.plist`의 `allow-unsigned-executable-memory`는 Developer ID 서명 후 실제 필요 여부 확인 필요.
-- Inno Setup 스크립트의 `Korean.isl`이 CI의 Inno Setup 버전에 포함되어 있는지 Windows 빌드 때 확인(없으면 언어 항목 조정).
-- Windows: `build_windows.ps1`/`smoke_windows.ps1`/`.iss`는 Windows에서 한 번도 실행하지 않았음.
-- Windows는 **미서명으로 출시 시작**(사용자 결정). 설치 안내서에 SmartScreen·백신 오탐·SHA-256 확인 절차 반영. 판매 시 설치 파일 SHA-256(`build_windows.ps1`이 출력)을 고객에게 함께 안내하고, 판매 페이지에 "설치 시 Windows 보안 경고가 나올 수 있음"을 명시할 것. 안내서의 화면 캡처는 Windows 실기기 검증 때 추가.
-- 고객 목록 엑셀(M3 보류)·조기 반납 환급·부분 출고·캘린더·자동/암호화 백업은 P1(구현하지 않음).
+- **U0 화면 배율**: `ui/display_scale.py`(작업 영역을 재서 메인 창이 안 들어가면 `QT_SCALE_FACTOR`로 축소, 설정에서 자동/80~150%, 기기별 `preferences.json`의 `ui_scale`), `MainWindow._fit_to_screen`.
+- **U1 용어**: 은퇴 → 사용 중지, 보관 → 거래 중지(숨김), 전환 버퍼 → 반납 후 준비 시간, 연체 배수 → 연체 1일당 일 대여료의 ○배, 순수금 → 받은 대여료, 대금충당 → 보증금에서 차감, 역거래 → 취소 기록. 표시 글자만 변경(DB 값·코드 이름 그대로). `tests/unit/test_terminology.py`가 옛 용어 재등장을 막음.
+- **U2 화면**: 예약 2단계 장비 선택 표(사용 불가 이유 열, 고를 수 있는 장비 위로), 연체 행 연한 빨강 바탕(`theme.RowHighlightDelegate` — 표 QSS가 칸 배경을 무시하므로 필요), 설정 입력칸 폭, 도움말 > 프로그램 정보·문의(`ui/dialogs/about_dialog.py`, 문의 문구는 `resources/support/support.json`).
+- **U3 자동 백업**: `services/auto_backup.py`. 라이선스 유효할 때 종료 시 `backups/auto/`에 하루 1개, 최근 14개. 7일 백업 알림(마지막 백업)은 갱신하지 않음.
+- **U4 정산 마무리**: `domain/settlement.plan_final_settlement`, `SettlementService.final_plan/finalize`(한 트랜잭션, 저장 직전 계획이 바뀌면 거부).
+- **U5 선입금**: 상태별 허용 거래 `MONEY_KINDS_BY_STATUS`(확정 예약은 선입금·보증금 수령과 그 환급·반환, 취소는 환급·반환·차감·수금). 취소 수수료는 **조정(ADJUSTMENT) 청구 + 설명 "예약 취소 수수료"** (DB 변경 없음). 돈 남은 취소 예약도 미정산 대상.
+- **U6 연장**: `services/extensions.py`, 마이그레이션 `003_order_extensions.sql`(스키마 버전 **3**). 연장 대여료는 주문 단위 조정 청구.
 
-## 다음 단계
+- **U9 예약 달력**: 메뉴 "예약 달력"(`ui/pages/calendar.py`), `services/calendar.py`(보기 기간만 조회), `domain/calendar.py`(칸 범위·줄 배정·선택 칸 → 예약 기간). 예약 마법사에 장비·기간 미리 채우기 인자 추가. DB 변경 없음.
+- 전체 테스트 중 `test_seller_script_refuses_key_inside_repo`가 스레드 경고(cp949 디코드)를 냄 — 위 cp949 문제와 같은 원인.
 
-1. (Windows 일괄 검증 시) CI `package-windows` 실행 → setup.exe로 Windows 11 x64 Python 미설치 PC 설치/실행/제거/재설치, `smoke_windows.ps1`, CP-02/04/07/09/10.
-2. Mac → Windows / Windows → Mac 백업 왕복 복원(CP-05/06), Windows 기기 코드로 재발급(CP-08).
-3. Developer ID 확보 후 `MACOS_SIGN_IDENTITY=... NOTARY_PROFILE=... scripts/build_macos.sh` → 깨끗한 사용자 계정에서 DMG 설치(CP-03/10).
-4. M5: 500장비/3000고객/10000예약 규모 테스트(시작 시 integrity_check 시간 포함), 1366×768 화면, 사용 설명서·오픈소스 고지(PySide6 LGPL), 릴리스.
+### DB 마이그레이션
+
+- `001_initial`(M1), `002_checkout_note`(M2), **`003_order_extensions`(M4.5 U6, 테이블 추가만)**. 현재 스키마 버전 3.
+- 계획상 U7에서 `004`(요금 방식 설정·예약 스냅샷 열)가 생길 예정.
+
+## 작업 시 알아둘 것 (이번 세션에서 겪은 문제)
+
+- Bash heredoc 안의 파이썬 스크립트로 소스 파일을 고칠 때 `"\\n"`이 실제 줄바꿈으로 들어가 문법 오류가 난 적이 여러 번 있었다. 줄바꿈 문자가 들어가는 수정은 편집 도구(Edit)로 하는 것이 안전하다.
+- 화면 변경은 테스트만으로 부족했다(연체 행 바탕색은 테스트 통과했지만 실제로는 안 보였음). 예제 데이터로 화면을 그려 PNG로 확인하는 방식을 썼다: `create_demo_database` → `AppContext(is_demo=True)` → `MainWindow`/대화상자 `.grab().save(...)`.
+- 오프스크린 테스트 화면은 작아서 메인 창 최소 크기가 작업 영역에 맞춰 줄어든다(테스트도 그에 맞게 작성됨).
+
+## 미완료/주의사항
+
+- 브랜치 `m4.5-usability`를 `main`에 합칠지 사용자 확인 필요.
+- 실기기 수동 확인 필요: 1366×768·FHD 125%/150%·Retina 화면 배율, 옛 버전(스키마 2) 백업을 새 버전에서 복원하는 왕복, 큰 DB에서 종료 시 자동 백업 시간.
+- `support.json`의 판매자 문의 문구는 판매 전 사용자 확인 필요. 사용 안내 페이지가 생기면 `manual_url`(https만) 입력.
+- 판매 페이지·설치 안내서·PRD 본문 용어를 U1의 새 용어로 맞추는 문서 작업이 남음.
+- M4의 미완료 사항(Developer ID 서명·공증, Windows 빌드 `build_windows.ps1`/`.iss` 미실행, Inno Setup `Korean.isl` 확인, 번들 ID `com.example.rentdesklite` 확정)은 그대로.
+- 장비 사진·QR, 장비 세트, 암호화 백업, 고객 목록 엑셀, 부분 출고는 여전히 P1(구현하지 않음).

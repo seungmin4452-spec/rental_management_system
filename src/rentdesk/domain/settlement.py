@@ -36,8 +36,8 @@ MONEY_KIND_LABELS = {
     MoneyKind.RENTAL_REFUND: "대여료 환급",
     MoneyKind.DEPOSIT_IN: "보증금 수령",
     MoneyKind.DEPOSIT_OUT: "보증금 반환",
-    MoneyKind.DEPOSIT_APPLIED: "보증금 대금충당",
-    MoneyKind.DEPOSIT_APPLICATION_REVERSAL: "보증금 충당 취소",
+    MoneyKind.DEPOSIT_APPLIED: "보증금에서 차감",
+    MoneyKind.DEPOSIT_APPLICATION_REVERSAL: "보증금 차감 취소",
 }
 
 _MONEY_FIELD = {
@@ -166,12 +166,12 @@ def validate_money_entry(
     if kind == MoneyKind.DEPOSIT_APPLIED:
         due = max(0, summary.amount_due_won)
         if due == 0:
-            raise ValidationError("amount_won", "충당할 미수금이 없습니다.")
+            raise ValidationError("amount_won", "보증금에서 차감할 미수금이 없습니다.")
         limit = min(summary.deposit_held_won, due)
         if amount > limit:
             raise ValidationError(
                 "amount_won",
-                f"충당액은 보증금 보유잔액({summary.deposit_held_won:,}원)과 "
+                f"보증금 차감액은 보증금 보유잔액({summary.deposit_held_won:,}원)과 "
                 f"미수금({due:,}원) 중 작은 금액 이하여야 합니다.",
             )
     if (
@@ -180,7 +180,7 @@ def validate_money_entry(
     ):
         raise ValidationError(
             "amount_won",
-            f"충당 취소액이 누적 충당액({summary.net_deposit_applied_won:,}원)을 초과합니다.",
+            f"차감 취소액이 누적 차감액({summary.net_deposit_applied_won:,}원)을 초과합니다.",
         )
 
     if related is not None:
@@ -200,3 +200,68 @@ def validate_money_entry(
                 "amount_won", f"정정 금액이 원거래의 남은 금액({remaining:,}원)을 초과합니다."
             )
     return amount
+
+
+@dataclass(frozen=True)
+class SettlementStep:
+    kind: MoneyKind
+    amount_won: int
+
+
+@dataclass(frozen=True)
+class FinalSettlementPlan:
+    """반납 완료 후 '정산 마무리' 계획 (USABILITY_PLAN U4).
+
+    steps: 기록할 거래(기록 순서대로). remaining_due_won: 보증금으로도 모자라 고객에게 더 받아야 할 돈.
+    """
+
+    steps: tuple[SettlementStep, ...]
+    remaining_due_won: int
+
+    @property
+    def deposit_return_won(self) -> int:
+        return sum(s.amount_won for s in self.steps if s.kind == MoneyKind.DEPOSIT_OUT)
+
+    @property
+    def rental_refund_won(self) -> int:
+        return sum(s.amount_won for s in self.steps if s.kind == MoneyKind.RENTAL_REFUND)
+
+    @property
+    def deposit_applied_won(self) -> int:
+        return sum(s.amount_won for s in self.steps if s.kind == MoneyKind.DEPOSIT_APPLIED)
+
+    @property
+    def is_empty(self) -> bool:
+        return not self.steps and self.remaining_due_won == 0
+
+
+def plan_final_settlement(summary: SettlementSummary) -> FinalSettlementPlan:
+    """미수금은 보증금에서 먼저 차감하고, 남은 보증금은 반환하고, 초과 수금은 환급한다.
+
+    - 미수 > 0, 보증금 보유 > 0: min(미수, 보증금)을 보증금에서 차감.
+    - 초과 수금(미수 < 0): 받은 대여료에서 먼저 환급, 그래도 남으면 이전 보증금 차감을 취소해 보증금으로 돌려준다.
+    - 남은 보증금은 전액 반환.
+    - 보증금으로도 모자란 미수는 remaining_due_won(사장님이 받을 돈)으로 남긴다(자동 기록하지 않음).
+    각 단계는 `validate_money_entry` 규칙을 순서대로 만족한다.
+    """
+    steps: list[SettlementStep] = []
+    s = summary
+    due, held = s.amount_due_won, s.deposit_held_won
+    if due > 0 and held > 0:
+        applied = min(due, held)
+        steps.append(SettlementStep(MoneyKind.DEPOSIT_APPLIED, applied))
+        s = apply_money(s, MoneyKind.DEPOSIT_APPLIED, applied)
+    elif due < 0:
+        over = -due
+        refund = min(over, s.net_rental_receipts_won)
+        if refund:
+            steps.append(SettlementStep(MoneyKind.RENTAL_REFUND, refund))
+            s = apply_money(s, MoneyKind.RENTAL_REFUND, refund)
+        rest = min(over - refund, s.net_deposit_applied_won)
+        if rest:
+            steps.append(SettlementStep(MoneyKind.DEPOSIT_APPLICATION_REVERSAL, rest))
+            s = apply_money(s, MoneyKind.DEPOSIT_APPLICATION_REVERSAL, rest)
+    if s.deposit_held_won > 0:
+        steps.append(SettlementStep(MoneyKind.DEPOSIT_OUT, s.deposit_held_won))
+        s = apply_money(s, MoneyKind.DEPOSIT_OUT, s.deposit_held_won)
+    return FinalSettlementPlan(steps=tuple(steps), remaining_due_won=max(0, s.amount_due_won))

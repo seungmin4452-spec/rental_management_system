@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -21,3 +23,25 @@ def get_sample_data_dir() -> Path:
 def get_app_icon_path() -> Path:
     """창·작업 표시줄 아이콘(256px PNG). 원본은 `scripts/make_icons.py`로 생성."""
     return get_resources_dir() / "icons" / "app.png"
+
+
+@dataclass(frozen=True)
+class SupportInfo:
+    """판매자 문의 안내(빌드마다 `resources/support/support.json`에서 바꾼다). 고객 개인정보는 넣지 않는다."""
+    contact: str
+    manual_url: str = ""
+
+
+DEFAULT_SUPPORT = SupportInfo(contact="프로그램 사용 중 궁금한 점은 구매한 곳(판매자)에 문의해주세요.")
+
+
+def get_support_info() -> SupportInfo:
+    try:
+        data = json.loads((get_resources_dir() / "support" / "support.json").read_text(encoding="utf-8"))
+        contact = str(data.get("contact") or "").strip()
+        url = str(data.get("manual_url") or "").strip()
+    except (OSError, ValueError, AttributeError):
+        return DEFAULT_SUPPORT
+    if not contact:
+        return DEFAULT_SUPPORT
+    return SupportInfo(contact=contact, manual_url=url if url.startswith("https://") else "")

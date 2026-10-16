@@ -120,6 +120,7 @@ class DataTable(QTableWidget):
         header.setStretchLastSection(True)
         header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         header.setHighlightSections(False)
+        self.setItemDelegate(theme.RowHighlightDelegate(self))  # 강조 행 바탕색
         self._badge_delegate = theme.StatusBadgeDelegate(self)
         for col in badge_columns:
             self.setItemDelegateForColumn(col, self._badge_delegate)
@@ -146,8 +147,9 @@ class DataTable(QTableWidget):
                     item.setTextAlignment(
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
                     )
-                if mark:
+                if mark:  # 연체 등 주의 행: 빨간 글자 + 연한 빨강 바탕
                     item.setForeground(theme.color("danger"))
+                    item.setBackground(theme.color("danger_soft"))
                 self.setItem(r, c, item)
         self.resizeColumnsToContents()
         header = self.horizontalHeader()

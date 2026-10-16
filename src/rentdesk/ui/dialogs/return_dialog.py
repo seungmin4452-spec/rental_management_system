@@ -198,7 +198,7 @@ class ReturnDialog(QDialog):
         if result.affected_reservations:
             feedback.warn(
                 self,
-                "아래 예약이 이번 반납(정비 필요/점검 버퍼)의 영향을 받을 수 있습니다. "
+                "아래 예약이 이번 반납(정비 필요/반납 후 준비 시간)의 영향을 받을 수 있습니다. "
                 "예약은 자동 취소되지 않았으니 고객과 일정을 조정해주세요.\n\n"
                 + "\n".join(f"- {describe_conflict(c)}" for c in result.affected_reservations),
                 "영향받는 예약",

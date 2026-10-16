@@ -158,7 +158,7 @@ class AssetDetailDialog(QDialog):
     def refresh(self) -> None:
         asset = self.ctx.assets.get_asset(self.asset_id)
         state = self.ctx.availability.asset_states([asset])[asset.id]
-        lifecycle = "활성" if asset.lifecycle_status == LifecycleStatus.ACTIVE else "은퇴"
+        lifecycle = "운영 중" if asset.lifecycle_status == LifecycleStatus.ACTIVE else "사용 중지"
         parts = [
             f"<b>{asset.asset_code}</b> | {asset.name}  (운영: {lifecycle})",
             f"카테고리 {asset.category_name} · 모델 {asset.model or '-'} · 위치 {asset.location or '-'}"

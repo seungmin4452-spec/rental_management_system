@@ -35,7 +35,7 @@ def test_t21_every_connection_has_foreign_keys_on(db_path, conn):
 def test_initial_schema_created(conn):
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert EXPECTED_TABLES <= tables
-    assert current_schema_version(conn) == latest_schema_version() == 2
+    assert current_schema_version(conn) == latest_schema_version() == 3
     assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
@@ -44,7 +44,7 @@ def test_migrations_are_idempotent(db_path, conn):
     again = open_database(db_path)
     try:
         assert apply_migrations(again) == []
-        assert again.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 2
+        assert again.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 3
     finally:
         again.close()
 
@@ -59,14 +59,14 @@ def test_database_from_newer_version_is_refused(db_path, conn):
 def test_failed_migration_rolls_back_and_backs_up_first(tmp_path, monkeypatch, conn):
     original = db.load_migrations()
     conn.execute("INSERT INTO categories (name) VALUES ('기존')")
-    broken = Migration(3, "003_broken.sql", "CREATE TABLE t_new (id INTEGER);\nTHIS IS NOT SQL;")
+    broken = Migration(4, "004_broken.sql", "CREATE TABLE t_new (id INTEGER);\nTHIS IS NOT SQL;")
     monkeypatch.setattr(db, "load_migrations", lambda: [*original, broken])
     backup = tmp_path / "pre_migration.db"
 
     with pytest.raises(DatabaseError):
         apply_migrations(conn, pre_migration_backup=backup)
 
-    assert current_schema_version(conn) == 2
+    assert current_schema_version(conn) == 3
     assert conn.execute("SELECT name FROM sqlite_master WHERE name='t_new'").fetchone() is None
     assert not conn.in_transaction
     copy = sqlite3.connect(backup)
