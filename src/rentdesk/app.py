@@ -131,7 +131,10 @@ class AppController:
 
     def _context(self, conn: sqlite3.Connection, *, demo: bool):
 
-        return AppContext(conn, is_demo=demo, license=self.license, preferences=self.preferences)
+        return AppContext(
+            conn, is_demo=demo, license=self.license, preferences=self.preferences,
+            import_backup_dir=None if demo else self.paths.backups / "before_import",
+        )
 
     def show(self, ctx) -> None:
 

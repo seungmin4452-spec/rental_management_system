@@ -3,7 +3,7 @@
 > 이 문서는 단계가 끝날 때마다 **덮어써서 최신 상태만** 남긴다. 지난 내역은 git 커밋 로그, `docs/PROGRESS_REPORT.md`(M0~M4 요약), `USABILITY_PLAN.md` "진행 기록"(M4.5 단계별), `OPEN_QUESTIONS.md`(결정 근거)에서 확인한다.
 > 새 세션은 **이 문서 → `CLAUDE.md` → `USABILITY_PLAN.md` → `TASKS.md`** 순서로 읽으면 바로 이어서 작업할 수 있다.
 
-## 현재 상태 (2026-10-16): M4.5 사용성 개선 U0~U6·U9 완료, U7·U8·U10 남음
+## 현재 상태 (2026-10-16): M4.5 사용성 개선 U0~U6·U9·U10 완료, U7·U8 남음
 
 - 원격 저장소: `https://github.com/seungmin4452-spec/rental_management_system.git` (`main`은 `e477eda`까지, M4.5 작업은 브랜치 `m4.5-usability`).
 - U0~U6·U9(+반납 창 연체료 문구 정리)는 Windows PC에서 작업해 브랜치 **`m4.5-usability`**로 커밋·푸시했다(`main`에는 아직 합치지 않음). 다른 PC에서는 `git fetch && git switch m4.5-usability`로 이어간다.
@@ -14,11 +14,10 @@
 
 | 단계 | 내용 | 시작 조건 |
 |---|---|---|
-| U10 | 엑셀 일괄 가져오기(장비·고객) | 바로 시작 가능 |
 | U7 | 대여일수·연체료 계산 방식 선택 | **사용자 결정 필요**: 지금 방식(24시간마다 1일 올림)만 둘지, 날짜 기준 방식도 넣을지, 넣는다면 "1박 2일"을 1일/2일 중 무엇으로 볼지 |
 | U8 | 대여확인서 출력(PDF·인쇄) | **사용자 결정 필요**: 기본 약관 문구(파손·분실 책임, 연체료, 보증금 반환 조건) 초안을 Claude가 써서 확인받을지 |
 
-U9는 완료. 다음은 U10(바로 시작 가능), U7·U8은 사용자 결정 후. 각 단계는 `USABILITY_PLAN.md`의 체크리스트대로 구현하고, 끝나면 그 파일의 "진행 기록"과 `TASKS.md` 체크박스, 이 문서를 갱신한다.
+U9·U10은 완료. 남은 U7·U8은 사용자 결정 후 시작. 각 단계는 `USABILITY_PLAN.md`의 체크리스트대로 구현하고, 끝나면 그 파일의 "진행 기록"과 `TASKS.md` 체크박스, 이 문서를 갱신한다.
 
 ## 환경 재현
 
@@ -56,10 +55,10 @@ scripts/build_macos.sh                # .app + .dmg (ad-hoc 서명, 공증 생�
 
 | 명령 | 환경 | 결과 |
 |---|---|---|
-| `pytest -q --deselect tests/unit/test_licensing.py::test_seller_script_keygen_issue_verify` | Windows 11 x64 (10.0.26200), Python 3.12.10, PySide6 6.7.3 | **491 passed, 3 skipped** (U9 완료 시점) |
+| `pytest -q --deselect tests/unit/test_licensing.py::test_seller_script_keygen_issue_verify` | Windows 11 x64 (10.0.26200), Python 3.12.10, PySide6 6.7.3 | **543 passed, 3 skipped** (U10 완료 시점) |
 | 위에서 뺀 1개 | 같은 PC | **실패(기존 문제, U0~U6과 무관)**: 판매자 스크립트 `generate_license.py`가 한국어 Windows 콘솔 인코딩(cp949)으로 출력하는데 테스트가 UTF-8로 읽음. Windows에서 라이선스를 발급하면 같은 문제가 날 수 있음. 아직 고치지 않음 |
 | `python -m rentdesk --self-check <json>` | 같은 PC | ok |
-| macOS 전체 테스트 | — | M4 시점 387 passed. **U0~U6·U9 이후 macOS에서는 아직 안 돌림** |
+| macOS 전체 테스트 | — | M4 시점 387 passed. **U0~U6·U9·U10 이후 macOS에서는 아직 안 돌림** |
 
 ## 라이선스 (중요)
 
@@ -76,7 +75,7 @@ scripts/build_macos.sh                # .app + .dmg (ad-hoc 서명, 공증 생�
 - 검토의 "실제 업무 불편(2번)·화면(3번)·용어(4번)"을 M4.5 단계로 만들어 개발. 기존 P1 백로그의 캘린더·엑셀 가져오기·대여확인서·연장·예약금·자동 백업·요금제 세분화를 출시 전 범위로 올림(PRD 2.2 표기 완료).
 - 응답은 한국어로.
 
-## U0~U6·U9에서 바뀐 것 (요약 — 상세는 `USABILITY_PLAN.md`)
+## U0~U6·U9·U10에서 바뀐 것 (요약 — 상세는 `USABILITY_PLAN.md`)
 
 - **U0 화면 배율**: `ui/display_scale.py`(작업 영역을 재서 메인 창이 안 들어가면 `QT_SCALE_FACTOR`로 축소, 설정에서 자동/80~150%, 기기별 `preferences.json`의 `ui_scale`), `MainWindow._fit_to_screen`.
 - **U1 용어**: 은퇴 → 사용 중지, 보관 → 거래 중지(숨김), 전환 버퍼 → 반납 후 준비 시간, 연체 배수 → 연체 1일당 일 대여료의 ○배, 순수금 → 받은 대여료, 대금충당 → 보증금에서 차감, 역거래 → 취소 기록. 표시 글자만 변경(DB 값·코드 이름 그대로). `tests/unit/test_terminology.py`가 옛 용어 재등장을 막음.
@@ -87,6 +86,7 @@ scripts/build_macos.sh                # .app + .dmg (ad-hoc 서명, 공증 생�
 - **U6 연장**: `services/extensions.py`, 마이그레이션 `003_order_extensions.sql`(스키마 버전 **3**). 연장 대여료는 주문 단위 조정 청구.
 
 - **U9 예약 달력**: 메뉴 "예약 달력"(`ui/pages/calendar.py`), `services/calendar.py`(보기 기간만 조회), `domain/calendar.py`(칸 범위·줄 배정·선택 칸 → 예약 기간). 예약 마법사에 장비·기간 미리 채우기 인자 추가. DB 변경 없음.
+- **U10 엑셀 가져오기**: 장비·고객 화면의 [엑셀로 가져오기](`ui/dialogs/import_dialog.py`) → `services/bulk_import.py`(양식 저장, 읽기·행별 검사·미리보기, 등록 직전 `backups/before_import/` 백업, 한 트랜잭션 등록, 미리보기 후 DB가 바뀌면 거부), 칸 값 해석은 `domain/import_cells.py`. `reports.save_workbook`을 분리해 함께 씀. DB 변경 없음.
 - 전체 테스트 중 `test_seller_script_refuses_key_inside_repo`가 스레드 경고(cp949 디코드)를 냄 — 위 cp949 문제와 같은 원인.
 
 ### DB 마이그레이션
@@ -108,3 +108,4 @@ scripts/build_macos.sh                # .app + .dmg (ad-hoc 서명, 공증 생�
 - 판매 페이지·설치 안내서·PRD 본문 용어를 U1의 새 용어로 맞추는 문서 작업이 남음.
 - M4의 미완료 사항(Developer ID 서명·공증, Windows 빌드 `build_windows.ps1`/`.iss` 미실행, Inno Setup `Korean.isl` 확인, 번들 ID `com.example.rentdesklite` 확정)은 그대로.
 - 장비 사진·QR, 장비 세트, 암호화 백업, 고객 목록 엑셀, 부분 출고는 여전히 P1(구현하지 않음).
+- U10 손 확인 필요: Windows Excel·Mac Numbers·한셀에서 저장한 xlsx를 실제로 가져와 보기(테스트는 openpyxl로 만든 파일만 사용).

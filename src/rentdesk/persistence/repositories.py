@@ -220,7 +220,20 @@ def max_auto_asset_number(conn: sqlite3.Connection) -> int:
     return row[0] or 0
 
 
+def all_asset_codes(conn: sqlite3.Connection) -> list[str]:
+    """사용 중지 장비 포함 전체 관리번호(엑셀 가져오기 중복 검사용)."""
+    return [r[0] for r in conn.execute("SELECT asset_code FROM assets")]
+
+
 # --------------------------------------------------------------------------- customers
+
+
+def customer_name_phones(conn: sqlite3.Connection) -> list[tuple[str, str]]:
+    """전화번호가 있는 고객(숨김 포함)의 (이름, 전화번호). 엑셀 가져오기 중복 의심 검사용."""
+    return [
+        (r[0], r[1])
+        for r in conn.execute("SELECT name, phone FROM customers WHERE phone IS NOT NULL")
+    ]
 
 
 def _row_to_customer(row: sqlite3.Row) -> Customer:

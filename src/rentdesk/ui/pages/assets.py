@@ -15,8 +15,10 @@ from PySide6.QtWidgets import (
 from rentdesk.domain.availability import ASSET_STATE_LABELS, AssetState
 from rentdesk.domain.display import format_won
 from rentdesk.domain.models import Asset, LifecycleStatus
+from rentdesk.services.bulk_import import ImportKind
 from rentdesk.ui import feedback, theme
 from rentdesk.ui.dialogs.asset_dialog import AssetDialog
+from rentdesk.ui.dialogs.import_dialog import ImportDialog
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable, empty_hint
 
@@ -54,7 +56,9 @@ class AssetsPage(Page):
         self.detail_btn = QPushButton("상세/이력")
         self.retire_btn = theme.set_variant(QPushButton("사용 중지"), "danger")
         self.delete_btn = theme.set_variant(QPushButton("삭제"), "danger")
+        self.import_btn = QPushButton("엑셀로 가져오기")
         self.new_btn.clicked.connect(self.create)
+        self.import_btn.clicked.connect(self.import_excel)
         self.edit_btn.clicked.connect(self.edit)
         self.detail_btn.clicked.connect(lambda: self._with_selected(lambda a: self.nav.open_asset(a.id)))
         self.retire_btn.clicked.connect(self.toggle_retire)
@@ -63,6 +67,7 @@ class AssetsPage(Page):
         for b in (self.new_btn, self.edit_btn, self.detail_btn, self.retire_btn, self.delete_btn):
             actions.addWidget(b)
         actions.addStretch(1)
+        actions.addWidget(self.import_btn)
 
         lay = QVBoxLayout(self)
         lay.addLayout(filters)
@@ -126,6 +131,10 @@ class AssetsPage(Page):
             self.nav.data_changed()
             if dlg.result_asset:
                 self.table.select_key(dlg.result_asset.id)
+
+    def import_excel(self) -> None:
+        if ImportDialog(self.ctx, ImportKind.ASSETS, self).exec():
+            self.nav.data_changed()
 
     def edit(self) -> None:
         def run(asset: Asset) -> None:

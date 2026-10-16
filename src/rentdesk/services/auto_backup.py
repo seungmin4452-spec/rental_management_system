@@ -42,9 +42,9 @@ def auto_backup_name(now: datetime) -> str:
     return f"{PREFIX}{to_seoul(now).date().isoformat()}.zip"
 
 
-def prune(folder: Path, keep: int = KEEP) -> tuple[Path, ...]:
+def prune(folder: Path, keep: int = KEEP, prefix: str = PREFIX) -> tuple[Path, ...]:
     """자동 백업 파일 중 오래된 것부터 지워 `keep`개만 남긴다(이름에 날짜가 있어 이름순 = 날짜순)."""
-    files = sorted(p for p in folder.glob(f"{PREFIX}*.zip") if p.is_file())
+    files = sorted(p for p in folder.glob(f"{prefix}*.zip") if p.is_file())
     removed = []
     for old in files[: max(0, len(files) - keep)]:
         try:

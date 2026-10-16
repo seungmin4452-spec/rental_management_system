@@ -12,8 +12,10 @@ from PySide6.QtWidgets import (
 )
 
 from rentdesk.domain.models import Customer
+from rentdesk.services.bulk_import import ImportKind
 from rentdesk.ui import feedback, theme
 from rentdesk.ui.dialogs.customer_dialog import CUSTOMER_TYPE_LABELS, CustomerDialog
+from rentdesk.ui.dialogs.import_dialog import ImportDialog
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable, empty_hint
 
@@ -44,6 +46,8 @@ class CustomersPage(Page):
         self.delete_btn = theme.set_variant(QPushButton("삭제"), "danger")
         self.reserve_btn = QPushButton("새 예약")
         self.orders_btn = QPushButton("예약 보기")
+        self.import_btn = QPushButton("엑셀로 가져오기")
+        self.import_btn.clicked.connect(self.import_excel)
         self.new_btn.clicked.connect(self.create)
         self.edit_btn.clicked.connect(lambda: self._with_selected(lambda c: self.open_customer(c.id)))
         self.archive_btn.clicked.connect(self.toggle_archive)
@@ -59,6 +63,7 @@ class CustomersPage(Page):
                   self.reserve_btn, self.orders_btn):
             actions.addWidget(b)
         actions.addStretch(1)
+        actions.addWidget(self.import_btn)
 
         lay = QVBoxLayout(self)
         lay.addLayout(filters)
@@ -110,6 +115,10 @@ class CustomersPage(Page):
             self.nav.data_changed()
             if dlg.result_customer:
                 self.table.select_key(dlg.result_customer.id)
+
+    def import_excel(self) -> None:
+        if ImportDialog(self.ctx, ImportKind.CUSTOMERS, self).exec():
+            self.nav.data_changed()
 
     def toggle_archive(self) -> None:
         def run(c: Customer) -> None:

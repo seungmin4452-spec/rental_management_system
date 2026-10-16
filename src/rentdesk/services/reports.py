@@ -278,38 +278,43 @@ class ReportService:
 
     def export(self, table: ReportTable, path: Path | str, *, overwrite: bool = False) -> Path:
         """xlsx로 저장. 같은 폴더 임시 파일에 쓴 뒤 교체해 중간 실패 시 기존 파일을 보존한다."""
-        target = Path(path)
-        if target.suffix.lower() != ".xlsx":
-            target = target.with_name(target.name + ".xlsx")
-        if target.exists() and not overwrite:
-            raise ReportExistsError(f"같은 이름의 파일이 이미 있습니다: {target.name}")
-        if not target.parent.is_dir():
-            raise DomainError("저장할 폴더를 찾을 수 없습니다. 다른 위치를 선택해주세요.")
         workbook = build_workbook(
             table, read_business_info(self._conn), current_time(self._clock)
         )
+        return save_workbook(workbook, path, overwrite=overwrite)
+
+
+def save_workbook(workbook: Workbook, path: Path | str, *, overwrite: bool = False) -> Path:
+    """xlsx로 저장. 같은 폴더 임시 파일에 쓴 뒤 교체해 중간 실패 시 기존 파일을 보존한다."""
+    target = Path(path)
+    if target.suffix.lower() != ".xlsx":
+        target = target.with_name(target.name + ".xlsx")
+    if target.exists() and not overwrite:
+        raise ReportExistsError(f"같은 이름의 파일이 이미 있습니다: {target.name}")
+    if not target.parent.is_dir():
+        raise DomainError("저장할 폴더를 찾을 수 없습니다. 다른 위치를 선택해주세요.")
+    tmp_name = None
+    try:
+        fd, tmp_name = tempfile.mkstemp(
+            prefix=".rentdesk-", suffix=".xlsx", dir=str(target.parent)
+        )
+        os.close(fd)
+        workbook.save(tmp_name)
+        os.replace(tmp_name, target)
         tmp_name = None
-        try:
-            fd, tmp_name = tempfile.mkstemp(
-                prefix=".rentdesk-", suffix=".xlsx", dir=str(target.parent)
-            )
-            os.close(fd)
-            workbook.save(tmp_name)
-            os.replace(tmp_name, target)
-            tmp_name = None
-        except PermissionError as exc:
-            raise DomainError(
-                "파일을 저장할 수 없습니다. 같은 파일이 엑셀 등 다른 프로그램에서 열려 있거나 "
-                "폴더 쓰기 권한이 없습니다."
-            ) from exc
-        except OSError as exc:
-            raise DomainError(
-                "파일을 저장하지 못했습니다. 저장 위치와 남은 용량을 확인해주세요."
-            ) from exc
-        finally:
-            if tmp_name is not None and os.path.exists(tmp_name):
-                os.remove(tmp_name)
-        return target
+    except PermissionError as exc:
+        raise DomainError(
+            "파일을 저장할 수 없습니다. 같은 파일이 엑셀 등 다른 프로그램에서 열려 있거나 "
+            "폴더 쓰기 권한이 없습니다."
+        ) from exc
+    except OSError as exc:
+        raise DomainError(
+            "파일을 저장하지 못했습니다. 저장 위치와 남은 용량을 확인해주세요."
+        ) from exc
+    finally:
+        if tmp_name is not None and os.path.exists(tmp_name):
+            os.remove(tmp_name)
+    return target
 
 
 def _excel_value(value: object, col: Column) -> object:
