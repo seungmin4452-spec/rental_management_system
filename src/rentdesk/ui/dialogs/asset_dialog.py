@@ -45,8 +45,9 @@ class AssetDialog(QDialog):
         self.name.setMaxLength(100)
         self.category = QComboBox()
         self.category.setEditable(True)
-        self.category.addItems([c.name for c in ctx.assets.list_categories()])
+        self.category.addItems([c.name for c in ctx.assets.list_categories()])  # "기타"는 맨 끝
         self.category.setCurrentText("")
+        self.category.lineEdit().setPlaceholderText("목록에서 고르거나 새 이름 입력 · 애매하면 '기타'")
         self.brand = QLineEdit()
         self.model = QLineEdit()
         self.serial = QLineEdit()

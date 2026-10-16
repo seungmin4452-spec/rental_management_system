@@ -15,7 +15,7 @@ def test_bootstrap_creates_db_and_reopens_without_data_loss(tmp_path):
 
     again = bootstrap_database(db_path, backup_dir)
     try:
-        assert again.execute("SELECT name FROM categories").fetchall()[0][0] == "카메라"
+        assert again.execute("SELECT name FROM categories WHERE is_system = 0").fetchone()[0] == "카메라"
         version = again.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0]
         assert version == latest_schema_version()
     finally:

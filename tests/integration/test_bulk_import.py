@@ -128,14 +128,15 @@ def test_assets_duplicates_ignore_case(imports, svc, folder):
 def test_assets_blank_non_numeric_negative(imports, folder):
     path = write_xlsx(folder / "a.xlsx", ASSET_HEADERS, [
         ("A-1", None, "카메라", None, None, None, 1000, 0),          # 빈 장비명
-        ("A-2", "장비", None, None, None, None, None, 0),            # 빈 카테고리·빈 대여료
+        ("A-2", "장비", None, None, None, None, None, 0),            # 빈 카테고리(→기타)·빈 대여료
         ("A-3", "장비", "카메라", None, None, None, "오만원", 0),     # 숫자 아님
         ("A-4", "장비", "카메라", None, None, None, -5000, -1),       # 음수
         ("A-5", "장비", "카메라", None, None, None, 1000.5, 0),       # 소수
     ])
     rows = imports.preview(ImportKind.ASSETS, path).rows
     assert any("장비명" in e for e in rows[0].errors)
-    assert len(rows[1].errors) == 2  # 카테고리 + 일 대여료를 한꺼번에 알려준다
+    assert len(rows[1].errors) == 1 and "일 대여료" in rows[1].errors[0]
+    assert "'기타'로 넣습니다" in rows[1].notes[0]  # 빈 카테고리는 오류가 아니라 "기타"(M4.6 R1)
     assert "숫자로" in rows[2].errors[0]
     assert len(rows[3].errors) == 2 and all("0 이상" in e for e in rows[3].errors)
     assert "소수" in rows[4].errors[0]
@@ -150,17 +151,35 @@ def test_new_category_choice(imports, svc, folder):
     ])
     preview = imports.preview(ImportKind.ASSETS, path)
     assert preview.new_categories == ("드론",)
-    assert [r.is_ok(False) for r in preview.rows] == [False, False, True]
-    assert "새 카테고리" in preview.rows[0].problems(False)[0]
+    assert [r.is_ok(False) for r in preview.rows] == [True, True, True]
+    assert "'드론' 카테고리가 없어 '기타'로 넣습니다" in preview.rows[0].notes_for(False)[0]
+    assert preview.rows[0].category_for(False) == "기타"
+    assert preview.rows[0].category_for(True) == "드론"
+    assert preview.rows[0].notes_for(True) == ()
 
-    only_existing = imports.run_import(preview, create_categories=False, backup_dir=None)
-    assert only_existing.created == 1 and only_existing.created_categories == ()
 
-    preview = imports.preview(ImportKind.ASSETS, path)  # C-1은 이제 중복
-    result = imports.run_import(preview, create_categories=True, backup_dir=None)
+def test_new_category_goes_to_system_category_by_default(imports, svc, folder):
+    path = write_xlsx(folder / "a.xlsx", ASSET_HEADERS, [
+        ("D-1", "드론 A", "드론", None, None, None, 1000, 0),
+        ("E-1", "빈 칸", None, None, None, None, 1000, 0),
+    ])
+    result = imports.run_import(imports.preview(ImportKind.ASSETS, path), create_categories=False,
+                                backup_dir=None)
+    assert result.created == 2 and result.created_categories == ()
+    assert {a.category_name for a in svc.assets.search_assets()} == {"기타"}
+    assert [c.name for c in svc.assets.list_categories()] == ["기타"]
+
+
+def test_new_category_created_when_chosen(imports, svc, folder):
+    path = write_xlsx(folder / "a.xlsx", ASSET_HEADERS, [
+        ("D-1", "드론 A", "드론", None, None, None, 1000, 0),
+        ("D-2", "드론 B", "드론", None, None, None, 1000, 0),
+    ])
+    result = imports.run_import(imports.preview(ImportKind.ASSETS, path), create_categories=True,
+                                backup_dir=None)
     assert result.created == 2 and result.created_categories == ("드론",)
     names = [c.name for c in svc.assets.list_categories()]
-    assert names.count("드론") == 1
+    assert names == ["드론", "기타"]
 
 
 def test_archived_category_is_error(imports, svc, folder):

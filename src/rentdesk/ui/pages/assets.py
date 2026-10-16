@@ -18,6 +18,7 @@ from rentdesk.domain.models import Asset, LifecycleStatus
 from rentdesk.services.bulk_import import ImportKind
 from rentdesk.ui import feedback, theme
 from rentdesk.ui.dialogs.asset_dialog import AssetDialog
+from rentdesk.ui.dialogs.category_dialog import CategoryDialog
 from rentdesk.ui.dialogs.import_dialog import ImportDialog
 from rentdesk.ui.pages.base import Page
 from rentdesk.ui.widgets import DataTable, empty_hint
@@ -57,6 +58,8 @@ class AssetsPage(Page):
         self.retire_btn = theme.set_variant(QPushButton("사용 중지"), "danger")
         self.delete_btn = theme.set_variant(QPushButton("삭제"), "danger")
         self.import_btn = QPushButton("엑셀로 가져오기")
+        self.category_btn = QPushButton("카테고리 관리")
+        self.category_btn.clicked.connect(self.manage_categories)
         self.new_btn.clicked.connect(self.create)
         self.import_btn.clicked.connect(self.import_excel)
         self.edit_btn.clicked.connect(self.edit)
@@ -67,6 +70,7 @@ class AssetsPage(Page):
         for b in (self.new_btn, self.edit_btn, self.detail_btn, self.retire_btn, self.delete_btn):
             actions.addWidget(b)
         actions.addStretch(1)
+        actions.addWidget(self.category_btn)
         actions.addWidget(self.import_btn)
 
         lay = QVBoxLayout(self)
@@ -134,6 +138,12 @@ class AssetsPage(Page):
 
     def import_excel(self) -> None:
         if ImportDialog(self.ctx, ImportKind.ASSETS, self).exec():
+            self.nav.data_changed()
+
+    def manage_categories(self) -> None:
+        dialog = CategoryDialog(self.ctx, self)
+        dialog.exec()
+        if dialog.changed:
             self.nav.data_changed()
 
     def edit(self) -> None:

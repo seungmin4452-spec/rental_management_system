@@ -228,11 +228,10 @@ class ReservationWizard(QDialog):
 
     def _load_assets(self) -> None:
         exclude = self.order.id if self.order else None
-        buffer = self.order.turnaround_buffer_snapshot_minutes if self.is_confirmed_edit else None
+        # 준비 시간은 장비 카테고리별(R2). 확정 예약 수정이면 담긴 장비는 확정 때 스냅샷 값(서비스가 처리).
         options = self.ctx.availability.asset_options(
             self.start.value(), self.due.value(), query=self.asset_query.text(),
             category_id=self.category.currentData(), exclude_order_id=exclude,
-            buffer_minutes=buffer,
         )
         shown = [o for o in options if not (self.only_available.isChecked() and not o.available
                                              and o.asset.id not in self._selected)]
@@ -327,6 +326,7 @@ class ReservationWizard(QDialog):
             f"대여일수 {q.rental_days}일 · 기본 대여료 {format_won(q.base_rental_fee_won)}"
             f" − 할인 {format_won(q.discount_won)} = <b>{format_won(q.expected_total_rental_fee_won)}</b>"
             f"<br>보증금 예상: <b>{format_won(q.expected_deposit_won)}</b>"
+            + "".join(f"<br>{line}" for line in self.ctx.reservations.policy_basis(sorted(self._selected)))
         )
 
     # ------------------------------------------------------------------ navigation

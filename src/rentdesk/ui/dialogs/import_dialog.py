@@ -74,8 +74,8 @@ class ImportDialog(QDialog):
         top.addWidget(self.choose_btn)
         top.addWidget(self.file_label, 1)
 
-        self.create_categories = QCheckBox("파일에 있는 새 카테고리를 만들고 등록")
-        self.create_categories.setChecked(True)
+        self.create_categories = QCheckBox("없는 카테고리는 새로 만들기 (선택하지 않으면 '기타'로 넣습니다)")
+        self.create_categories.setChecked(False)
         self.create_categories.toggled.connect(self._show_preview)
         self.create_categories.setVisible(kind == ImportKind.ASSETS)
 
@@ -153,7 +153,8 @@ class ImportDialog(QDialog):
         if self.kind == ImportKind.ASSETS:
             a = row.asset
             if a is not None:
-                return [a.asset_code or "(자동)", a.name, a.category_name, format_won(a.daily_rate_won)]
+                category = row.category_for(self.create_categories.isChecked())
+                return [a.asset_code or "(자동)", a.name, category, format_won(a.daily_rate_won)]
             keys = ("asset_code", "name", "category", "daily_rate_won")
         else:
             c = row.customer
@@ -171,7 +172,7 @@ class ImportDialog(QDialog):
         by_no = {r.row_no: r for r in rows}
         self.table.set_rows([
             (r.row_no, [r.row_no, "등록 가능" if r.is_ok(create) else "오류",
-                        *self._cells(r), " / ".join(r.problems(create) + r.notes)])
+                        *self._cells(r), " / ".join(r.problems(create) + r.notes_for(create))])
             for r in rows
         ], highlight=lambda key: not by_no[key].is_ok(create))
         reason_col = self.table.columnCount() - 1
@@ -186,7 +187,7 @@ class ImportDialog(QDialog):
                 text += f" · <span style='color:{theme.color('danger').name()}'>오류 <b>{bad:,}</b>행(등록 안 됨)</span>"
             if preview.new_categories:
                 names = ", ".join(preview.new_categories)
-                text += f"<br>새 카테고리: {names}" + ("" if create else " — 만들지 않으면 해당 행은 오류로 둡니다.")
+                text += f"<br>새 카테고리: {names}" + ("" if create else " — 만들지 않고 '기타'로 넣습니다.")
             self.summary.setText(text)
         self.notices.setText("\n".join(preview.notices) if preview else "")
         self.notices.setVisible(bool(preview and preview.notices))

@@ -35,13 +35,14 @@ def test_asset_import_preview_and_partial_import(conn, clock, svc, ui, tmp_path)
     dlg.load_file(path)
     assert dlg.table.rowCount() == 4
     assert dlg.table.item(1, 1).text() == "오류" and "이미 등록된" in dlg.table.item(1, 6).text()
-    assert "새 카테고리: 드론" in dlg.summary.text()
+    assert "새 카테고리: 드론" in dlg.summary.text() and "'기타'로 넣습니다" in dlg.summary.text()
     assert dlg.import_btn.text() == "오류 없는 2행만 등록"
+    assert not dlg.create_categories.isChecked()  # 기본은 "기타"로 넣기(M4.6 R1)
+    assert dlg.table.item(3, 4).text() == "기타" and "'기타'로 넣습니다" in dlg.table.item(3, 6).text()
 
-    dlg.create_categories.setChecked(False)  # 새 카테고리 안 만들기 → 드론 행도 오류
-    assert dlg.import_btn.text() == "오류 없는 1행만 등록"
-    assert "카테고리가 없습니다" in dlg.table.item(3, 6).text()
-    dlg.create_categories.setChecked(True)
+    dlg.create_categories.setChecked(True)  # 새 카테고리 만들기
+    assert dlg.import_btn.text() == "오류 없는 2행만 등록"
+    assert dlg.table.item(3, 4).text() == "드론"
 
     dlg.run_import()
     assert "2행은 등록하지 않습니다" in ui.texts("confirm")[-1]

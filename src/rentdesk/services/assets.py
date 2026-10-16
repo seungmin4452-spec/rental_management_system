@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 
 from rentdesk.domain.errors import (
     DuplicateError,
@@ -12,7 +13,14 @@ from rentdesk.domain.errors import (
     NotFoundError,
     ValidationError,
 )
-from rentdesk.domain.models import Asset, Category, ItemStatus, LifecycleStatus, OrderStatus
+from rentdesk.domain.models import (
+    Asset,
+    Category,
+    CategoryPolicy,
+    ItemStatus,
+    LifecycleStatus,
+    OrderStatus,
+)
 from rentdesk.domain.pricing import validate_won
 from rentdesk.domain.timeutil import format_seoul, parse_utc_str, parse_utc_str_opt
 from rentdesk.persistence import repositories as repo
@@ -24,6 +32,7 @@ from rentdesk.services.common import (
     current_time,
     default_clock,
 )
+from rentdesk.services.settings import validate_minutes, validate_multiplier
 
 AUTO_CODE_PREFIX = "AST-"
 
@@ -69,6 +78,19 @@ def _clean(data: AssetInput) -> _CleanAsset:
     )
 
 
+def _clean_category_policy(
+    turnaround_buffer_minutes: int | None, grace_minutes: int | None, late_multiplier: str | Decimal | None
+) -> CategoryPolicy:
+    """카테고리 운영 설정 검증(가게 기본값과 같은 범위). None은 "가게 기본값 사용"."""
+    return CategoryPolicy(
+        turnaround_buffer_minutes=None if turnaround_buffer_minutes is None else validate_minutes(
+            "turnaround_buffer_minutes", "반납 후 준비 시간", turnaround_buffer_minutes),
+        grace_minutes=None if grace_minutes is None else validate_minutes(
+            "grace_minutes", "연체료 없이 기다려 주는 시간", grace_minutes),
+        late_multiplier=None if late_multiplier is None else validate_multiplier(late_multiplier),
+    )
+
+
 @dataclass(frozen=True)
 class AssetOrderRow:
     """장비 상세(W-05)의 예약/대여 이력 1행."""
@@ -107,12 +129,99 @@ class AssetService:
             category_id = repo.insert_category(self._conn, clean)
         return repo.get_category(self._conn, category_id)
 
+    def system_category(self) -> Category:
+        """항상 있는 "기타" 카테고리."""
+        return repo.get_system_category(self._conn)
+
+    def rename_category(self, category_id: int, name: str) -> Category:
+        clean = clean_required(name, "category", "카테고리", 50)
+        now = current_time(self._clock)
+        with transaction(self._conn):
+            self._rename_in_txn(category_id, clean, now)
+        return repo.get_category(self._conn, category_id)
+
+    def update_category_policy(
+        self,
+        category_id: int,
+        *,
+        turnaround_buffer_minutes: int | None,
+        grace_minutes: int | None,
+        late_multiplier: str | Decimal | None,
+    ) -> Category:
+        """카테고리별 운영 설정(MULTI_INDUSTRY_PLAN R2). None = 가게 기본값 사용.
+
+        이미 확정된 예약은 품목별 스냅샷을 쓰므로 바뀌지 않는다. "기타"도 설정할 수 있다.
+        """
+        policy = _clean_category_policy(turnaround_buffer_minutes, grace_minutes, late_multiplier)
+        now = current_time(self._clock)
+        with transaction(self._conn):
+            self._set_policy_in_txn(category_id, policy, now)
+        return repo.get_category(self._conn, category_id)
+
+    def update_category(
+        self,
+        category_id: int,
+        *,
+        name: str,
+        turnaround_buffer_minutes: int | None,
+        grace_minutes: int | None,
+        late_multiplier: str | Decimal | None,
+    ) -> Category:
+        """카테고리 관리 창의 [저장]: 이름(바뀐 경우)과 운영 설정을 한 트랜잭션으로 저장."""
+        clean = clean_required(name, "category", "카테고리", 50)
+        policy = _clean_category_policy(turnaround_buffer_minutes, grace_minutes, late_multiplier)
+        now = current_time(self._clock)
+        with transaction(self._conn):
+            current = repo.get_category(self._conn, category_id)
+            if current is None:
+                raise NotFoundError("카테고리를 찾을 수 없습니다.")
+            if clean != current.name:
+                self._rename_in_txn(category_id, clean, now)
+            self._set_policy_in_txn(category_id, policy, now)
+        return repo.get_category(self._conn, category_id)
+
+    def _rename_in_txn(self, category_id: int, name: str, now: datetime) -> None:
+        category = self._editable_category(category_id, "이름을 바꿀")
+        other = repo.get_category_by_name(self._conn, name)
+        if other is not None and other.id != category_id:
+            raise DuplicateError(f"이미 존재하는 카테고리입니다: {other.name}")
+        repo.rename_category(self._conn, category_id, name)
+        repo.insert_audit(
+            self._conn, entity_type="category", entity_id=category_id, action="RENAME",
+            description=f"{category.name} → {name}", now=now,
+        )
+
+    def _set_policy_in_txn(self, category_id: int, policy: CategoryPolicy, now: datetime) -> None:
+        if repo.get_category(self._conn, category_id) is None:
+            raise NotFoundError("카테고리를 찾을 수 없습니다.")
+        repo.update_category_policy(self._conn, category_id, policy)
+        repo.insert_audit(
+            self._conn, entity_type="category", entity_id=category_id, action="UPDATE_POLICY",
+            description=(
+                f"buffer={policy.turnaround_buffer_minutes}, grace={policy.grace_minutes},"
+                f" multiplier={policy.late_multiplier}"
+            ), now=now,
+        )
+
     def set_category_archived(self, category_id: int, archived: bool) -> Category:
         with transaction(self._conn):
-            if repo.get_category(self._conn, category_id) is None:
+            if archived:
+                self._editable_category(category_id, "숨길")
+            elif repo.get_category(self._conn, category_id) is None:
                 raise NotFoundError("카테고리를 찾을 수 없습니다.")
             repo.set_category_archived(self._conn, category_id, archived)
         return repo.get_category(self._conn, category_id)
+
+    def _editable_category(self, category_id: int, verb: str) -> Category:
+        category = repo.get_category(self._conn, category_id)
+        if category is None:
+            raise NotFoundError("카테고리를 찾을 수 없습니다.")
+        if category.is_system:
+            raise InvalidStateError(
+                f"'{category.name}' 카테고리는 어느 카테고리에도 맞지 않는 장비를 넣는 기본 칸이라 "
+                f"{verb} 수 없습니다."
+            )
+        return category
 
     def _resolve_category(self, name: str) -> int:
         """이름으로 카테고리를 찾고 없으면 생성(트랜잭션 내부에서 호출)."""

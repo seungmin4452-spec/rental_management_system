@@ -6,11 +6,13 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 
 from rentdesk.domain.errors import ValidationError
-from rentdesk.domain.models import RentalPolicy
+from rentdesk.domain.models import Asset, RentalPolicy
+from rentdesk.domain.policy import effective_policy
 from rentdesk.domain.pricing import parse_multiplier
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
@@ -35,6 +37,17 @@ def read_policy(conn: sqlite3.Connection) -> RentalPolicy:
     )
 
 
+def policies_for_assets(conn: sqlite3.Connection, assets: Iterable[Asset]) -> dict[int, RentalPolicy]:
+    """장비별 실제 적용 운영 설정(가게 기본값 → 카테고리 설정, MULTI_INDUSTRY_PLAN R2)."""
+    assets = list(assets)
+    shop = read_policy(conn)
+    categories = repo.categories_by_id(conn, (a.category_id for a in assets))
+    return {
+        a.id: effective_policy(shop, categories[a.category_id].policy if a.category_id in categories else None)
+        for a in assets
+    }
+
+
 def read_business_info(conn: sqlite3.Connection) -> BusinessInfo:
     return BusinessInfo(
         name=str(repo.get_setting(conn, "business_name") or ""),
@@ -42,7 +55,14 @@ def read_business_info(conn: sqlite3.Connection) -> BusinessInfo:
     )
 
 
-def _validate_minutes(field: str, label: str, value: object) -> int:
+def validate_multiplier(value: str | Decimal) -> Decimal:
+    multiplier = parse_multiplier(value)
+    if multiplier > 100:
+        raise ValidationError("late_multiplier", "연체 1일당 일 대여료의 배수는 100배 이하여야 합니다.")
+    return multiplier
+
+
+def validate_minutes(field: str, label: str, value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
         raise ValidationError(field, f"{label}은(는) 분 단위 정수여야 합니다.")
     if not 0 <= value <= MAX_MINUTES:
@@ -65,11 +85,9 @@ class SettingsService:
         late_multiplier: str | Decimal,
         turnaround_buffer_minutes: int,
     ) -> RentalPolicy:
-        grace = _validate_minutes("grace_minutes", "연체료 없이 기다려 주는 시간", grace_minutes)
-        buffer = _validate_minutes("turnaround_buffer_minutes", "반납 후 준비 시간", turnaround_buffer_minutes)
-        multiplier = parse_multiplier(late_multiplier)
-        if multiplier > 100:
-            raise ValidationError("late_multiplier", "연체 1일당 일 대여료의 배수는 100배 이하여야 합니다.")
+        grace = validate_minutes("grace_minutes", "연체료 없이 기다려 주는 시간", grace_minutes)
+        buffer = validate_minutes("turnaround_buffer_minutes", "반납 후 준비 시간", turnaround_buffer_minutes)
+        multiplier = validate_multiplier(late_multiplier)
         now = current_time(self._clock)
         with transaction(self._conn):
             repo.set_setting(self._conn, "grace_minutes", grace)

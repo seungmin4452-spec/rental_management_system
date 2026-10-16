@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QDialog, QFormLayout, QLabel, QPushButton, QVBoxLa
 from rentdesk.context import AppContext
 from rentdesk.domain.display import format_dt, format_won
 from rentdesk.domain.models import ORDER_STATUS_LABELS, OrderStatus
+from rentdesk.domain.policy import buffer_summary
 from rentdesk.services.settlements import has_ledger_activity
 from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import DataTable, WonSpinBox, button_row
@@ -94,7 +95,7 @@ class OrderDetailDialog(QDialog):
             f" · 상태 <b>{ORDER_STATUS_LABELS[order.status]}</b>",
             f"예약 기간 {format_dt(order.start_at)} ~ {format_dt(order.due_at)}"
             f" · 출고 {format_dt(order.actual_checkout_at, '-')}"
-            f" · 반납 후 준비 시간 {order.turnaround_buffer_snapshot_minutes}분",
+            f" · 반납 후 준비 시간 {buffer_summary([i.turnaround_buffer_snapshot_minutes for i in order.items])}",
         ]
         if order.notes:
             lines.append(f"메모: {order.notes}")

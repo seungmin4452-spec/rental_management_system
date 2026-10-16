@@ -373,6 +373,6 @@ def test_older_schema_backup_is_migrated_on_restore(tmp_path, clock):
     try:
         assert restored.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] \
             == latest_schema_version()
-        assert restored.execute("SELECT name FROM categories").fetchone()[0] == "옛 분류"
+        assert restored.execute("SELECT name FROM categories WHERE is_system = 0").fetchone()[0] == "옛 분류"
     finally:
         restored.close()

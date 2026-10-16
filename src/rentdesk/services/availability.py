@@ -7,7 +7,7 @@ DB에서 점유 후보를 읽어 도메인 순수 함수(`domain.availability`)�
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -17,7 +17,7 @@ from rentdesk.domain.models import Asset, ItemStatus, LifecycleStatus, OrderStat
 from rentdesk.domain.timeutil import format_seoul, parse_utc_str, parse_utc_str_opt
 from rentdesk.persistence import repositories as repo
 from rentdesk.services.common import Clock, current_time, default_clock
-from rentdesk.services.settings import read_policy
+from rentdesk.services.settings import policies_for_assets
 
 
 def load_occupancies(
@@ -55,22 +55,56 @@ def load_occupancies(
     return occupancies
 
 
+def request_buffers(
+    conn: sqlite3.Connection, asset_ids: Sequence[int], *, order_id: int | None = None
+) -> dict[int, int]:
+    """장비별로 새 예약에 적용할 반납 후 준비 시간(분).
+
+    카테고리 설정이 있으면 그 값, 없으면 가게 기본값(R2). `order_id`가 확정 이후 주문이면
+    그 주문에 이미 담긴 장비는 확정 때 스냅샷한 값을 그대로 쓴다(설정을 바꿔도 기존 약정 불변).
+    """
+    assets = repo.get_assets(conn, list(asset_ids))
+    buffers = {
+        asset_id: policy.turnaround_buffer_minutes
+        for asset_id, policy in policies_for_assets(conn, assets.values()).items()
+    }
+    if order_id is not None:
+        order = repo.get_order(conn, order_id)
+        if order is not None and order.status not in (OrderStatus.DRAFT, OrderStatus.CANCELED):
+            for item in order.items:
+                if item.asset_id in buffers:
+                    buffers[item.asset_id] = item.turnaround_buffer_snapshot_minutes
+    return buffers
+
+
 def find_conflicts(
     conn: sqlite3.Connection,
     asset_ids: Sequence[int],
     start_at: datetime,
     due_at: datetime,
-    buffer_minutes: int,
+    buffer_minutes: int | Mapping[int, int],
     now: datetime,
     *,
     exclude_order_id: int | None = None,
 ) -> list[ConflictInfo]:
-    """요청 구간 `[start, due + buffer)`과 겹치는 점유 목록."""
-    req_start, req_end = av.reservation_interval(start_at, due_at, buffer_minutes)
-    conflicts = av.find_conflicts(
-        req_start, req_end, load_occupancies(conn, asset_ids, now),
-        exclude_order_id=exclude_order_id,
-    )
+    """요청 구간 `[start, due + buffer)`과 겹치는 점유 목록.
+
+    `buffer_minutes`는 모든 장비에 같은 값(int) 또는 장비별 값(장비 id → 분, R2 카테고리 설정).
+    """
+    if isinstance(buffer_minutes, int):
+        buffers = dict.fromkeys(asset_ids, buffer_minutes)
+    else:
+        buffers = {a: buffer_minutes[a] for a in asset_ids}
+    occupancies = load_occupancies(conn, asset_ids, now)
+    conflicts: list[av.Occupancy] = []
+    for buffer in sorted(set(buffers.values())):
+        group = {a for a, b in buffers.items() if b == buffer}
+        req_start, req_end = av.reservation_interval(start_at, due_at, buffer)
+        conflicts += av.find_conflicts(
+            req_start, req_end, [o for o in occupancies if o.asset_id in group],
+            exclude_order_id=exclude_order_id,
+        )
+    conflicts.sort(key=lambda o: (o.asset_id, o.start_at))
     codes = {a.id: a.asset_code for a in repo.get_assets(conn, list(asset_ids)).values()}
     return [
         ConflictInfo(
@@ -153,7 +187,7 @@ class AvailabilityService:
     ) -> list[ConflictInfo]:
         """화면 사전 확인용. 실제 확정 시에는 ReservationService가 트랜잭션 안에서 재검사한다."""
         if buffer_minutes is None:
-            buffer_minutes = read_policy(self._conn).turnaround_buffer_minutes
+            buffer_minutes = request_buffers(self._conn, asset_ids, order_id=exclude_order_id)
         return find_conflicts(
             self._conn, asset_ids, start_at, due_at, buffer_minutes,
             current_time(self._clock), exclude_order_id=exclude_order_id,

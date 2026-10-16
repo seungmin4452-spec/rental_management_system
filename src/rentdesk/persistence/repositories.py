@@ -15,6 +15,7 @@ from rentdesk.domain.models import (
     OrderExtension,
     Asset,
     Category,
+    CategoryPolicy,
     ChargeKind,
     ChargeLine,
     Customer,
@@ -45,13 +46,55 @@ def _placeholders(n: int) -> str:
 # --------------------------------------------------------------------------- categories
 
 
+def _row_to_category_policy(row: sqlite3.Row) -> CategoryPolicy:
+    multiplier = row["late_multiplier"]
+    return CategoryPolicy(
+        grace_minutes=row["grace_minutes"],
+        late_multiplier=None if multiplier is None else Decimal(multiplier),
+        turnaround_buffer_minutes=row["turnaround_buffer_minutes"],
+    )
+
+
 def _row_to_category(row: sqlite3.Row) -> Category:
-    return Category(id=row["id"], name=row["name"], is_archived=bool(row["is_archived"]))
+    return Category(
+        id=row["id"], name=row["name"], is_archived=bool(row["is_archived"]),
+        is_system=bool(row["is_system"]), policy=_row_to_category_policy(row),
+    )
+
+
+def update_category_policy(conn: sqlite3.Connection, category_id: int, policy: CategoryPolicy) -> None:
+    conn.execute(
+        "UPDATE categories SET grace_minutes = ?, late_multiplier = ?, turnaround_buffer_minutes = ?"
+        " WHERE id = ?",
+        (policy.grace_minutes,
+         None if policy.late_multiplier is None else str(policy.late_multiplier),
+         policy.turnaround_buffer_minutes, category_id),
+    )
+
+
+def categories_by_id(conn: sqlite3.Connection, category_ids: Iterable[int]) -> dict[int, Category]:
+    ids = sorted(set(category_ids))
+    if not ids:
+        return {}
+    rows = conn.execute(f"SELECT * FROM categories WHERE id IN ({_placeholders(len(ids))})", ids)
+    return {r["id"]: _row_to_category(r) for r in rows}
 
 
 def get_category_by_name(conn: sqlite3.Connection, name: str) -> Category | None:
     row = conn.execute("SELECT * FROM categories WHERE name = ?", (name,)).fetchone()
     return _row_to_category(row) if row else None
+
+
+def get_system_category(conn: sqlite3.Connection) -> Category:
+    """마이그레이션 004가 보장하는 "기타" 카테고리."""
+    row = conn.execute("SELECT * FROM categories WHERE is_system = 1").fetchone()
+    if row is None:  # 마이그레이션이 보장하므로 정상 DB에서는 일어나지 않는다
+        raise LookupError("system category missing")
+    return _row_to_category(row)
+
+
+def rename_category(conn: sqlite3.Connection, category_id: int, name: str) -> None:
+    conn.execute("UPDATE categories SET name = ? WHERE id = ?", (name, category_id))
 
 
 def get_category(conn: sqlite3.Connection, category_id: int) -> Category | None:
@@ -68,7 +111,7 @@ def list_categories(conn: sqlite3.Connection, *, include_archived: bool = False)
     sql = "SELECT * FROM categories"
     if not include_archived:
         sql += " WHERE is_archived = 0"
-    sql += " ORDER BY name"
+    sql += " ORDER BY is_system, name"  # "기타"는 항상 맨 끝
     return [_row_to_category(r) for r in conn.execute(sql)]
 
 
@@ -335,6 +378,7 @@ def _row_to_item(row: sqlite3.Row) -> RentalItem:
             ReturnCondition(row["return_condition"]) if row["return_condition"] else None
         ),
         return_note=row["return_note"],
+        turnaround_buffer_snapshot_minutes=row["buffer_minutes"],
     )
 
 
@@ -445,15 +489,17 @@ def insert_item(
     deposit_won: int,
     late_multiplier: Decimal,
     grace_minutes: int,
+    buffer_minutes: int,
 ) -> int:
     cur = conn.execute(
         """
         INSERT INTO rental_items (order_id, asset_id, status, daily_rate_snapshot_won,
                                   deposit_snapshot_won, late_multiplier_snapshot,
-                                  grace_minutes_snapshot)
-        VALUES (?, ?, 'RESERVED', ?, ?, ?, ?)
+                                  grace_minutes_snapshot, turnaround_buffer_snapshot_minutes)
+        VALUES (?, ?, 'RESERVED', ?, ?, ?, ?, ?)
         """,
-        (order_id, asset_id, daily_rate_won, deposit_won, str(late_multiplier), grace_minutes),
+        (order_id, asset_id, daily_rate_won, deposit_won, str(late_multiplier), grace_minutes,
+         buffer_minutes),
     )
     return int(cur.lastrowid)
 
@@ -466,14 +512,16 @@ def update_item_snapshot(
     deposit_won: int,
     late_multiplier: Decimal,
     grace_minutes: int,
+    buffer_minutes: int,
 ) -> None:
     conn.execute(
         """
         UPDATE rental_items SET daily_rate_snapshot_won = ?, deposit_snapshot_won = ?,
-               late_multiplier_snapshot = ?, grace_minutes_snapshot = ?
+               late_multiplier_snapshot = ?, grace_minutes_snapshot = ?,
+               turnaround_buffer_snapshot_minutes = ?
         WHERE id = ?
         """,
-        (daily_rate_won, deposit_won, str(late_multiplier), grace_minutes, item_id),
+        (daily_rate_won, deposit_won, str(late_multiplier), grace_minutes, buffer_minutes, item_id),
     )
 
 
@@ -490,9 +538,13 @@ def set_items_status_for_order(
     )
 
 
-_ITEM_SELECT = """
-SELECT i.*, a.asset_code
+# 품목 준비 시간 스냅샷이 비어 있으면(마이그레이션 005 이전 형식) 주문 스냅샷을 쓴다.
+_ITEM_BUFFER = "COALESCE(i.turnaround_buffer_snapshot_minutes, o.turnaround_buffer_snapshot_minutes)"
+
+_ITEM_SELECT = f"""
+SELECT i.*, a.asset_code, {_ITEM_BUFFER} AS buffer_minutes
 FROM rental_items i JOIN assets a ON a.id = i.asset_id
+JOIN rental_orders o ON o.id = i.order_id
 """
 
 
@@ -569,7 +621,7 @@ def occupying_item_rows(
         f"""
         SELECT i.asset_id, i.status AS item_status, i.actual_return_at_utc,
                o.id AS order_id, o.order_no, o.status AS order_status,
-               o.start_at_utc, o.due_at_utc, o.turnaround_buffer_snapshot_minutes
+               o.start_at_utc, o.due_at_utc, {_ITEM_BUFFER} AS turnaround_buffer_snapshot_minutes
         FROM rental_items i JOIN rental_orders o ON o.id = i.order_id
         WHERE i.asset_id IN ({_placeholders(len(asset_ids))})
           AND o.status IN ('CONFIRMED', 'IN_RENTAL', 'COMPLETED')
@@ -598,9 +650,9 @@ def confirmed_orders_for_asset(
 ) -> list[sqlite3.Row]:
     """해당 장비를 포함한 출고 전 확정 예약."""
     return conn.execute(
-        """
+        f"""
         SELECT o.id AS order_id, o.order_no, o.start_at_utc, o.due_at_utc,
-               o.turnaround_buffer_snapshot_minutes
+               {_ITEM_BUFFER} AS turnaround_buffer_snapshot_minutes
         FROM rental_items i JOIN rental_orders o ON o.id = i.order_id
         WHERE i.asset_id = ? AND o.status = 'CONFIRMED' AND i.status = 'RESERVED'
         ORDER BY o.start_at_utc

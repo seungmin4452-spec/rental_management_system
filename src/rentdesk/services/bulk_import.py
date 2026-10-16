@@ -36,7 +36,7 @@ from rentdesk.domain.import_cells import (
     is_blank,
     normalize_header,
 )
-from rentdesk.domain.models import CustomerType
+from rentdesk.domain.models import SYSTEM_CATEGORY_NAME, CustomerType
 from rentdesk.domain.timeutil import to_seoul
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
@@ -94,8 +94,9 @@ ASSET_COLUMNS: tuple[ImportColumn, ...] = (
                  help="장비마다 다른 번호(최대 30자, 대소문자 구분 안 함). 비우면 AST-000001처럼 자동으로 붙습니다."),
     ImportColumn("name", "장비명", required=True, aliases=("이름", "품명"),
                  example="미러리스 카메라", help="최대 100자"),
-    ImportColumn("category", "카테고리", required=True, aliases=("분류", "종류"),
-                 example="카메라", help="없는 카테고리는 가져올 때 새로 만들지 고를 수 있습니다(최대 50자)."),
+    ImportColumn("category", "카테고리", aliases=("분류", "종류"),
+                 example="카메라",
+                 help="비우면 '기타'로 넣습니다. 없는 카테고리는 가져올 때 새로 만들지, '기타'로 넣을지 고를 수 있습니다(최대 50자)."),
     ImportColumn("brand", "브랜드", aliases=("제조사",), example="소니", help="선택"),
     ImportColumn("model", "모델명", aliases=("모델",), example="A7M4", text_format=True, help="선택"),
     ImportColumn("serial_no", "시리얼 번호", aliases=("시리얼", "일련번호", "S/N"), example="SN0001",
@@ -138,12 +139,24 @@ class ImportRow:
     notes: tuple[str, ...] = ()
     asset: AssetInput | None = None
     customer: CustomerInput | None = None
-    new_category: str | None = None  # 아직 없는 카테고리(새로 만들기를 고르면 등록 가능)
+    new_category: str | None = None  # 아직 없는 카테고리(새로 만들기를 고르지 않으면 "기타"로 등록)
 
     def problems(self, create_categories: bool) -> tuple[str, ...]:
-        if self.new_category and not create_categories and not self.errors:
-            return (f"'{self.new_category}' 카테고리가 없습니다(새 카테고리 만들기를 선택하면 등록됩니다).",)
         return self.errors
+
+    def notes_for(self, create_categories: bool) -> tuple[str, ...]:
+        """안내 문구. 없는 카테고리를 만들지 않으면 "기타"로 넣는다고 알려준다(M4.6 R1)."""
+        if self.new_category and not create_categories and not self.errors:
+            return (f"'{self.new_category}' 카테고리가 없어 '{SYSTEM_CATEGORY_NAME}'로 넣습니다.", *self.notes)
+        return self.notes
+
+    def category_for(self, create_categories: bool) -> str | None:
+        """실제로 등록될 카테고리 이름."""
+        if self.asset is None:
+            return None
+        if self.new_category and not create_categories:
+            return SYSTEM_CATEGORY_NAME
+        return self.asset.category_name
 
     def is_ok(self, create_categories: bool) -> bool:
         return not self.problems(create_categories)
@@ -331,6 +344,7 @@ class _AssetChecker:
         self.categories = {
             c.name.casefold(): c for c in repo.list_categories(conn, include_archived=True)
         }
+        self.system_name = repo.get_system_category(conn).name
         self.file_codes: dict[str, int] = {}
         self.new_categories: dict[str, str] = {}  # casefold → 파일에서 처음 쓴 표기
 
@@ -339,7 +353,7 @@ class _AssetChecker:
         text = lambda key: cell_text(cells.get(key))  # noqa: E731
         code = c.take(lambda: clean_optional(text("asset_code"), "asset_code", "관리번호", 30))
         name = c.take(lambda: clean_required(text("name"), "name", "장비명", 100))
-        category = c.take(lambda: clean_required(text("category"), "category", "카테고리", 50))
+        category = c.take(lambda: clean_optional(text("category"), "category", "카테고리", 50))
         brand = c.take(lambda: clean_optional(text("brand"), "brand", "브랜드", 100))
         model = c.take(lambda: clean_optional(text("model"), "model", "모델명", 100))
         serial = c.take(lambda: clean_optional(text("serial_no"), "serial_no", "시리얼 번호", 100))
@@ -358,6 +372,10 @@ class _AssetChecker:
                 self.file_codes[folded] = row_no
 
         new_category = None
+        notes: list[str] = []
+        if category is None and not any("카테고리" in e for e in c.errors):
+            category = self.system_name
+            notes.append(f"카테고리가 비어 있어 '{category}'로 넣습니다.")
         if isinstance(category, str):
             existing = self.categories.get(category.casefold())
             if existing is None:
@@ -375,8 +393,8 @@ class _AssetChecker:
                 asset_code=code, brand=brand, model=model, serial_no=serial,
                 location=location, note=note,
             )
-        return ImportRow(row_no=row_no, cells=cells, errors=tuple(c.errors), asset=asset,
-                         new_category=new_category)
+        return ImportRow(row_no=row_no, cells=cells, errors=tuple(c.errors), notes=tuple(notes),
+                         asset=asset, new_category=new_category)
 
 
 class _CustomerChecker:
@@ -476,7 +494,7 @@ class ImportService:
                     "파일을 다시 선택해 미리보기를 확인해주세요."
                 )
             if preview.kind == ImportKind.ASSETS:
-                created_ids = self._insert_assets(ok_rows, now, created_categories)
+                created_ids = self._insert_assets(ok_rows, now, created_categories, create_categories)
             else:
                 created_ids = self._insert_customers(ok_rows, now)
         return ImportResult(
@@ -499,8 +517,9 @@ class ImportService:
         return result.path
 
     def _insert_assets(self, rows: Sequence[ImportRow], now: datetime,
-                       created_categories: list[str]) -> list[int]:
+                       created_categories: list[str], create_categories: bool) -> list[int]:
         category_ids = {c.name.casefold(): c.id for c in repo.list_categories(self._conn)}
+        system_id = repo.get_system_category(self._conn).id
         used = {c.casefold() for c in repo.all_asset_codes(self._conn)}
         used |= {r.asset.asset_code.casefold() for r in rows if r.asset.asset_code}
         next_no = repo.max_auto_asset_number(self._conn) + 1
@@ -514,6 +533,9 @@ class ImportService:
                 code = f"{AUTO_CODE_PREFIX}{next_no:06d}"
                 used.add(code.casefold())
             folded = data.category_name.casefold()
+            if folded not in category_ids and not create_categories:
+                folded = SYSTEM_CATEGORY_NAME.casefold()
+                category_ids.setdefault(folded, system_id)
             if folded not in category_ids:
                 category_ids[folded] = repo.insert_category(self._conn, data.category_name)
                 created_categories.append(data.category_name)

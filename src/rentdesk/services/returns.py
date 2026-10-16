@@ -204,7 +204,7 @@ class ReturnService:
                     )
 
                 # 반납 시각 + 점검 버퍼 안에 시작하는 후속 확정 예약 경고
-                buffer_end = returned_at + timedelta(minutes=order.turnaround_buffer_snapshot_minutes)
+                buffer_end = returned_at + timedelta(minutes=item.turnaround_buffer_snapshot_minutes)
                 for c in affected_confirmed_reservations(
                     self._conn, item.asset_id, returned_at, buffer_end
                 ):

@@ -120,7 +120,8 @@ class ExtensionService:
         )
         conflicts = find_conflicts(
             self._conn, [i.asset_id for i in out_items], order.start_at, new_due,
-            order.turnaround_buffer_snapshot_minutes, now, exclude_order_id=order.id,
+            {i.asset_id: i.turnaround_buffer_snapshot_minutes for i in out_items}, now,
+            exclude_order_id=order.id,
         )
         return ExtensionPreview(
             order=order, new_due_at=new_due, asset_codes=tuple(i.asset_code for i in out_items),

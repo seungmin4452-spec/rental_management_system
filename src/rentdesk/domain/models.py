@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -105,10 +105,34 @@ ORDER_STATUS_LABELS = {
 
 
 @dataclass(frozen=True)
+class CategoryPolicy:
+    """카테고리별 운영 설정. None = 가게 기본값 사용."""
+
+    grace_minutes: int | None = None
+    late_multiplier: Decimal | None = None
+    turnaround_buffer_minutes: int | None = None
+
+    @property
+    def overridden(self) -> frozenset[str]:
+        """가게 기본값 대신 카테고리 값을 쓰는 항목 이름."""
+        return frozenset(f.name for f in fields(self) if getattr(self, f.name) is not None)
+
+
+@dataclass(frozen=True)
 class Category:
     id: int
     name: str
     is_archived: bool
+    is_system: bool = False  # 항상 있는 "기타"(M4.6 R1): 이름 변경·숨김 불가, 목록 맨 끝
+    policy: CategoryPolicy = field(default_factory=CategoryPolicy)  # M4.6 R2: 비면 가게 기본값
+
+
+SYSTEM_CATEGORY_NAME = "기타"
+
+
+def category_sort_key(category: Category) -> tuple[bool, str]:
+    """카테고리 목록 정렬: 이름순, "기타"(시스템)는 항상 맨 끝."""
+    return (category.is_system, category.name.casefold())
 
 
 @dataclass(frozen=True)
@@ -155,6 +179,7 @@ class RentalItem:
     actual_return_at: datetime | None
     return_condition: ReturnCondition | None
     return_note: str | None
+    turnaround_buffer_snapshot_minutes: int = 0  # M4.6 R2: 품목별 반납 후 준비 시간(확정 시 스냅샷)
 
 
 @dataclass(frozen=True)
@@ -166,7 +191,7 @@ class RentalOrder:
     start_at: datetime
     due_at: datetime
     actual_checkout_at: datetime | None
-    turnaround_buffer_snapshot_minutes: int
+    turnaround_buffer_snapshot_minutes: int  # M4.6 R2부터 계산에 쓰지 않음(품목 스냅샷 사용), 호환용
     discount_won: int
     notes: str | None
     created_at: datetime

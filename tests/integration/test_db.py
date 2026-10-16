@@ -35,7 +35,7 @@ def test_t21_every_connection_has_foreign_keys_on(db_path, conn):
 def test_initial_schema_created(conn):
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert EXPECTED_TABLES <= tables
-    assert current_schema_version(conn) == latest_schema_version() == 3
+    assert current_schema_version(conn) == latest_schema_version() == 5
     assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 
@@ -44,7 +44,7 @@ def test_migrations_are_idempotent(db_path, conn):
     again = open_database(db_path)
     try:
         assert apply_migrations(again) == []
-        assert again.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 3
+        assert again.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == latest_schema_version()
     finally:
         again.close()
 
@@ -59,19 +59,20 @@ def test_database_from_newer_version_is_refused(db_path, conn):
 def test_failed_migration_rolls_back_and_backs_up_first(tmp_path, monkeypatch, conn):
     original = db.load_migrations()
     conn.execute("INSERT INTO categories (name) VALUES ('기존')")
-    broken = Migration(4, "004_broken.sql", "CREATE TABLE t_new (id INTEGER);\nTHIS IS NOT SQL;")
+    version = latest_schema_version()
+    broken = Migration(version + 1, f"{version + 1:03d}_broken.sql", "CREATE TABLE t_new (id INTEGER);\nTHIS IS NOT SQL;")
     monkeypatch.setattr(db, "load_migrations", lambda: [*original, broken])
     backup = tmp_path / "pre_migration.db"
 
     with pytest.raises(DatabaseError):
         apply_migrations(conn, pre_migration_backup=backup)
 
-    assert current_schema_version(conn) == 3
+    assert current_schema_version(conn) == version
     assert conn.execute("SELECT name FROM sqlite_master WHERE name='t_new'").fetchone() is None
     assert not conn.in_transaction
     copy = sqlite3.connect(backup)
     try:
-        assert copy.execute("SELECT name FROM categories").fetchall() == [("기존",)]
+        assert copy.execute("SELECT name FROM categories WHERE is_system = 0").fetchall() == [("기존",)]
     finally:
         copy.close()
 
@@ -81,7 +82,7 @@ def test_transaction_rolls_back_on_exception(conn):
         with transaction(conn):
             conn.execute("INSERT INTO categories (name) VALUES ('롤백대상')")
             raise RuntimeError("boom")
-    assert conn.execute("SELECT COUNT(*) FROM categories").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM categories WHERE name = '롤백대상'").fetchone()[0] == 0
     assert not conn.in_transaction
 
 
@@ -93,7 +94,7 @@ def test_nested_transaction_is_refused(conn):
 
 
 def _seed_order(conn):
-    conn.execute("INSERT INTO categories (id, name) VALUES (1, '카메라')")
+    # 카테고리 1번은 마이그레이션이 만든 "기타"(M4.6 R1)
     conn.execute(
         "INSERT INTO assets (id, asset_code, name, category_id, daily_rate_won, deposit_won,"
         " created_at_utc) VALUES (1, 'CAM-1', '카메라', 1, 30000, 100000, '2026-10-01T00:00:00Z')"
@@ -125,7 +126,7 @@ class TestConstraints:
 
     @pytest.mark.parametrize("amount", ["-1", "1.5", "'1,000원'"])
     def test_money_must_be_non_negative_integer(self, conn, amount):
-        conn.execute("INSERT INTO categories (id, name) VALUES (1, 'c')")
+        # 카테고리 1번 = 마이그레이션이 만든 "기타"
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 "INSERT INTO assets (asset_code, name, category_id, daily_rate_won, deposit_won,"
@@ -133,7 +134,7 @@ class TestConstraints:
             )
 
     def test_utc_timestamp_format_enforced(self, conn):
-        conn.execute("INSERT INTO categories (id, name) VALUES (1, 'c')")
+        # 카테고리 1번 = 마이그레이션이 만든 "기타"
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 "INSERT INTO assets (asset_code, name, category_id, daily_rate_won, deposit_won,"

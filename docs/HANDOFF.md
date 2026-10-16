@@ -3,7 +3,10 @@
 > 이 문서는 단계가 끝날 때마다 **덮어써서 최신 상태만** 남긴다. 지난 내역은 git 커밋 로그, `docs/PROGRESS_REPORT.md`(M0~M4 요약), `USABILITY_PLAN.md` "진행 기록"(M4.5 단계별), `OPEN_QUESTIONS.md`(결정 근거)에서 확인한다.
 > 새 세션은 **이 문서 → `CLAUDE.md` → `USABILITY_PLAN.md` → `TASKS.md`** 순서로 읽으면 바로 이어서 작업할 수 있다.
 
-## 현재 상태 (2026-10-16): M4.5 사용성 개선 U0~U6·U9·U10 완료, U7·U8 남음
+## 현재 상태 (2026-10-16): M4.6 범용화 진행 중 — R1·R2 완료, **R3부터 이어서**
+
+- **M4.6 R1("기타" 카테고리)·R2(카테고리별 운영 설정, 품목별 준비 시간 스냅샷) 완료**, Windows PC에서 커밋해 브랜치 `m4.5-usability`로 푸시. 맥북에서는 `git fetch && git switch m4.5-usability && git pull` 후 `pip install -e '.[dev,build]'`(새 의존성 없음)로 이어간다. 상세·다음 작업 위치는 `MULTI_INDUSTRY_PLAN.md` "진행 기록".
+- 스키마 버전 **5**(`004_system_category`, `005_category_policy`). 맥북에서 처음 실행하면 개발용 DB가 자동 마이그레이션된다(이전 DB는 `backups`에 보호 백업).
 
 - 원격 저장소: `https://github.com/seungmin4452-spec/rental_management_system.git` (`main`은 `e477eda`까지, M4.5 작업은 브랜치 `m4.5-usability`).
 - U0~U6·U9(+반납 창 연체료 문구 정리)는 Windows PC에서 작업해 브랜치 **`m4.5-usability`**로 커밋·푸시했다(`main`에는 아직 합치지 않음). 다른 PC에서는 `git fetch && git switch m4.5-usability`로 이어간다.
@@ -12,17 +15,20 @@
   - 앱 데이터 폴더가 `RentalDesk`로 바뀌어 개발 중 쓰던 `RentDeskLite` 폴더의 데이터는 자동으로 옮기지 않는다(출시 전이라 고객 데이터 없음). 필요하면 옛 앱 버전에서 백업 → 새 버전에서 복원(옛 이름 백업 복원 허용, `LEGACY_PRODUCTS`).
   - 기기 코드 계산에 제품명이 들어가므로 **기기 코드가 모두 바뀌고 기존 라이선스는 무효**. 개발용 라이선스는 다시 발급한다.
   - 그대로 둔 것: Python 패키지 `rentdesk`, `rentdesk.spec`/`rentdesk.iss` 파일 이름, `RENTDESK_*` 환경변수, Inno Setup `AppId`, 판매자 키 폴더 `~/RentDeskSellerKeys`(실제 서명 키 위치라 바꾸지 않음), 공증 프로필 이름 `rentdesk-notary`.
-- 제품 로드맵은 `PRD.md` 11.4, 업종별 버전 계획은 `INDUSTRY_PRESETS.md`(초안, 결정 대기).
+- 제품 로드맵은 `PRD.md` 11.4. **2026-10-16 범용화 결정**: 업종별 버전 대신 모든 업종이 쓰는 하나의 앱으로 가며, 1.0 전에 **M4.6(`MULTI_INDUSTRY_PLAN.md`)**을 진행한다 — 상시 "기타" 카테고리, 카테고리별 설정(장비별 설정 없음), 요금 방식(일·1박2일·주말·주·월), 장비 세트(키트). U7·U8은 M4.6 R3·R6로 확장 이동.
 - M4 미완료 항목(Developer ID 서명·공증, Windows 네이티브 빌드, Python 미설치 PC 설치 검증, Mac↔Windows 실제 왕복 복원, CP-02~CP-10)과 M5 출시 항목은 그대로 남아 있다.
 
 ## 다음 할 일
 
 | 단계 | 내용 | 시작 조건 |
 |---|---|---|
-| U7 | 대여일수·연체료 계산 방식 선택 | **사용자 결정 필요**: 지금 방식(24시간마다 1일 올림)만 둘지, 날짜 기준 방식도 넣을지, 넣는다면 "1박 2일"을 1일/2일 중 무엇으로 볼지 |
-| U8 | 대여확인서 출력(PDF·인쇄) | **사용자 결정 필요**: 기본 약관 문구(파손·분실 책임, 연체료, 보증금 반환 조건) 초안을 Claude가 써서 확인받을지 |
+| R1 | "기타" 카테고리 상시 제공 | **완료** |
+| R2 | 카테고리별 운영 설정 | **완료**(PRD 7.3 문구 갱신, 반납 창 출처 표시만 남음) |
+| R3 | 요금 방식 확장(구 U7) | **다음 작업, 아직 코드 변경 없음**. 결정 완료(`MULTI_INDUSTRY_PLAN.md` 7장), 수정할 위치 목록은 진행 기록 |
+| R4 | 장비 세트(키트) | R3 뒤. 결정 완료(7장) |
+| R5~R7 | 추가 비용 일반화, 확인서·견적서(구 U8, **약관 문구 초안 확인 필요**), 시작 도우미(1.0 포함) | R4 뒤 |
 
-U9·U10은 완료. 남은 U7·U8은 사용자 결정 후 시작. 각 단계는 `USABILITY_PLAN.md`의 체크리스트대로 구현하고, 끝나면 그 파일의 "진행 기록"과 `TASKS.md` 체크박스, 이 문서를 갱신한다.
+M4.5는 U0~U6·U9·U10 완료로 마감(U7·U8은 M4.6로 이동). 각 단계는 `MULTI_INDUSTRY_PLAN.md`의 체크리스트대로 구현하고, 끝나면 그 파일의 "진행 기록"과 `TASKS.md` 체크박스, 이 문서를 갱신한다.
 
 ## 환경 재현
 
@@ -63,7 +69,8 @@ scripts/build_macos.sh                # .app + .dmg (ad-hoc 서명, 공증 생�
 | `pytest -q --deselect tests/unit/test_licensing.py::test_seller_script_keygen_issue_verify` | Windows 11 x64 (10.0.26200), Python 3.12.10, PySide6 6.7.3 | **543 passed, 3 skipped** (U10 완료 시점) |
 | 위에서 뺀 1개 | 같은 PC | **실패(기존 문제, U0~U6과 무관)**: 판매자 스크립트 `generate_license.py`가 한국어 Windows 콘솔 인코딩(cp949)으로 출력하는데 테스트가 UTF-8로 읽음. Windows에서 라이선스를 발급하면 같은 문제가 날 수 있음. 아직 고치지 않음 |
 | `python -m rentdesk --self-check <json>` | 같은 PC | ok |
-| macOS 전체 테스트 | — | M4 시점 387 passed. **U0~U6·U9·U10 이후 macOS에서는 아직 안 돌림** |
+| 같은 명령 (M4.6 R1·R2 완료 시점) | Windows 11 x64, 같은 환경 | **580 passed, 3 skipped** |
+| macOS 전체 테스트 | — | M4 시점 387 passed. **U0~U6·U9·U10·M4.6 R1·R2 이후 macOS에서는 아직 안 돌림 — 맥북에서 먼저 실행할 것** |
 
 ## 라이선스 (중요)
 
@@ -96,8 +103,8 @@ scripts/build_macos.sh                # .app + .dmg (ad-hoc 서명, 공증 생�
 
 ### DB 마이그레이션
 
-- `001_initial`(M1), `002_checkout_note`(M2), **`003_order_extensions`(M4.5 U6, 테이블 추가만)**. 현재 스키마 버전 3.
-- 계획상 U7에서 `004`(요금 방식 설정·예약 스냅샷 열)가 생길 예정.
+- `001_initial`(M1), `002_checkout_note`(M2), `003_order_extensions`(M4.5 U6), **`004_system_category`(R1), `005_category_policy`(R2)**. 현재 스키마 버전 5.
+- 계획상 R3·R4에서 `006`(요금 규칙·스냅샷), `007`(세트)이 생길 예정.
 
 ## 작업 시 알아둘 것 (이번 세션에서 겪은 문제)
 

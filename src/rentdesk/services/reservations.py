@@ -3,13 +3,14 @@
 - DRAFT는 가용성을 점유하지 않는다. CONFIRMED부터 점유.
 - 확정·확정 예약 수정은 `BEGIN IMMEDIATE` 트랜잭션 안에서 가용성을 다시 검사한 뒤 저장한다.
   화면의 사전 검사(AvailabilityService)만 신뢰하지 않는다.
-- 확정 시 장비 단가/보증금, 유예시간/연체 배수(품목별), 전환 버퍼(주문별)를 스냅샷으로 저장한다.
+- 확정 시 장비 단가/보증금, 유예시간/연체 배수/반납 후 준비 시간을 품목별 스냅샷으로 저장한다.
+  운영 설정은 장비 카테고리 설정이 있으면 그 값, 없으면 가게 기본값(MULTI_INDUSTRY_PLAN R2).
 """
 
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -29,14 +30,17 @@ from rentdesk.domain.models import (
     OrderStatus,
     RentalItem,
     RentalOrder,
+    RentalPolicy,
+    category_sort_key,
 )
+from rentdesk.domain.policy import policy_basis
 from rentdesk.domain.pricing import OrderQuote, PricedItem, quote_order, validate_won
 from rentdesk.domain.timeutil import ensure_aware, to_seoul, to_utc
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
 from rentdesk.services.availability import describe_conflict, find_conflicts
 from rentdesk.services.common import Clock, clean_optional, current_time, default_clock
-from rentdesk.services.settings import read_policy
+from rentdesk.services.settings import policies_for_assets, read_policy
 
 MAX_ITEMS_PER_ORDER = 30
 CANCEL_FEE_DESCRIPTION = "예약 취소 수수료"
@@ -221,6 +225,19 @@ class ReservationService:
         ]
         return quote_order(priced, to_utc(start_at), to_utc(due_at), discount_won)
 
+    def policy_basis(self, asset_ids: Sequence[int]) -> list[str]:
+        """예약 마법사 근거 문구(R2): 장비 카테고리별 준비 시간·연체 기준과 출처.
+
+        담긴 장비의 카테고리 중 하나라도 카테고리 설정이 있을 때만 보여준다(단순한 가게는 빈 목록).
+        """
+        assets = repo.get_assets(self._conn, list(asset_ids))
+        categories = repo.categories_by_id(self._conn, (a.category_id for a in assets.values()))
+        used = sorted(categories.values(), key=category_sort_key)
+        if not any(c.policy.overridden for c in used):
+            return []
+        shop = read_policy(self._conn)
+        return [policy_basis(c.name, c.policy, shop) for c in used]
+
     # ------------------------------------------------------------------ commands
 
     def create_draft(self, data: ReservationInput) -> RentalOrder:
@@ -261,21 +278,15 @@ class ReservationService:
                 require_future_start=order.status == OrderStatus.CONFIRMED and start_changed,
             )
 
-            policy = read_policy(self._conn)
             assets = repo.get_assets(self._conn, list(clean.asset_ids))
+            policies = policies_for_assets(self._conn, assets.values())
             existing = {i.asset_id: i for i in order.items}
             for asset_id, item in existing.items():
                 if asset_id not in clean.asset_ids:
                     repo.delete_item(self._conn, item.id)
             for asset_id in clean.asset_ids:
                 if asset_id not in existing:
-                    asset = assets[asset_id]
-                    repo.insert_item(
-                        self._conn, order_id=order_id, asset_id=asset_id,
-                        daily_rate_won=asset.daily_rate_won, deposit_won=asset.deposit_won,
-                        late_multiplier=policy.late_multiplier,
-                        grace_minutes=policy.grace_minutes,
-                    )
+                    self._insert_item(order_id, assets[asset_id], policies[asset_id])
             repo.update_order_header(
                 self._conn, order_id, customer_id=clean.customer_id,
                 start_at=clean.start_at, due_at=clean.due_at,
@@ -287,7 +298,7 @@ class ReservationService:
             if order.status == OrderStatus.CONFIRMED:
                 self._raise_if_conflicts(
                     clean.asset_ids, clean.start_at, clean.due_at,
-                    order.turnaround_buffer_snapshot_minutes, now, order_id,
+                    {i.asset_id: i.turnaround_buffer_snapshot_minutes for i in items}, now, order_id,
                 )
             repo.insert_audit(
                 self._conn, entity_type="rental_order", entity_id=order_id, action="UPDATE",
@@ -349,7 +360,8 @@ class ReservationService:
                 [PricedItem(a.daily_rate_won, a.deposit_won) for a in assets.values()],
                 clean.start_at, clean.due_at, clean.discount_won,
             )
-            policy = read_policy(self._conn)
+            shop = read_policy(self._conn)
+            policies = policies_for_assets(self._conn, assets.values())
             order_id = repo.insert_order(
                 self._conn,
                 order_no=self._next_order_no(now),
@@ -357,18 +369,13 @@ class ReservationService:
                 status=OrderStatus.DRAFT,
                 start_at=clean.start_at,
                 due_at=clean.due_at,
-                buffer_minutes=policy.turnaround_buffer_minutes,
+                buffer_minutes=shop.turnaround_buffer_minutes,  # 호환용(계산은 품목 스냅샷)
                 discount_won=clean.discount_won,
                 notes=clean.notes,
                 now=now,
             )
             for asset_id in clean.asset_ids:
-                asset = assets[asset_id]
-                repo.insert_item(
-                    self._conn, order_id=order_id, asset_id=asset_id,
-                    daily_rate_won=asset.daily_rate_won, deposit_won=asset.deposit_won,
-                    late_multiplier=policy.late_multiplier, grace_minutes=policy.grace_minutes,
-                )
+                self._insert_item(order_id, assets[asset_id], policies[asset_id])
             repo.insert_audit(
                 self._conn, entity_type="rental_order", entity_id=order_id, action="CREATE_DRAFT",
                 description=None, now=now,
@@ -388,29 +395,38 @@ class ReservationService:
         assets = self._check_assets(asset_ids)
         validate_reservation_window(order.start_at, order.due_at, now, require_future_start=True)
 
-        # 확정 시점의 단가/보증금/정책을 스냅샷으로 고정
-        policy = read_policy(self._conn)
+        # 확정 시점의 단가/보증금/운영 설정(카테고리 설정 → 가게 기본값)을 품목별 스냅샷으로 고정
+        policies = policies_for_assets(self._conn, assets.values())
         for item in order.items:
-            asset = assets[item.asset_id]
+            asset, policy = assets[item.asset_id], policies[item.asset_id]
             repo.update_item_snapshot(
                 self._conn, item.id,
                 daily_rate_won=asset.daily_rate_won, deposit_won=asset.deposit_won,
                 late_multiplier=policy.late_multiplier, grace_minutes=policy.grace_minutes,
+                buffer_minutes=policy.turnaround_buffer_minutes,
             )
         quote_items(
             repo.get_items(self._conn, order_id), order.start_at, order.due_at, order.discount_won
         )
         self._raise_if_conflicts(
-            asset_ids, order.start_at, order.due_at, policy.turnaround_buffer_minutes, now,
-            order_id,
+            asset_ids, order.start_at, order.due_at,
+            {a: p.turnaround_buffer_minutes for a, p in policies.items()}, now, order_id,
         )
         repo.set_order_status(
             self._conn, order_id, OrderStatus.CONFIRMED, now=now,
-            buffer_minutes=policy.turnaround_buffer_minutes,
+            buffer_minutes=read_policy(self._conn).turnaround_buffer_minutes,  # 호환용
         )
         repo.insert_audit(
             self._conn, entity_type="rental_order", entity_id=order_id, action="CONFIRM",
             description=order.order_no, now=now,
+        )
+
+    def _insert_item(self, order_id: int, asset: Asset, policy: RentalPolicy) -> None:
+        repo.insert_item(
+            self._conn, order_id=order_id, asset_id=asset.id,
+            daily_rate_won=asset.daily_rate_won, deposit_won=asset.deposit_won,
+            late_multiplier=policy.late_multiplier, grace_minutes=policy.grace_minutes,
+            buffer_minutes=policy.turnaround_buffer_minutes,
         )
 
     def _raise_if_conflicts(
@@ -418,7 +434,7 @@ class ReservationService:
         asset_ids: Sequence[int],
         start_at: datetime,
         due_at: datetime,
-        buffer_minutes: int,
+        buffer_minutes: Mapping[int, int],
         now: datetime,
         order_id: int,
     ) -> None:
