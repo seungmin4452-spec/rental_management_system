@@ -1,4 +1,10 @@
-# RentDesk Lite 문서 변경 이력
+# RentalDesk 문서 변경 이력
+
+## v1.2 — 2026-10-16
+
+- 제품명을 **RentDesk Lite → RentalDesk(렌탈데스크)**로 변경. 출시 전이라 앱 데이터 폴더·기기 코드·라이선스 `product`·백업 manifest·번들 ID·설치 파일 이름까지 바꿨다. 이름 변경 전 백업은 복원을 허용한다.
+- `PRD.md` 11.2 판매 구성을 크몽 3단계 패키지(STANDARD/DELUXE/PREMIUM)와 추가 옵션으로 구체화.
+- `PRD.md` 11.4 제품 로드맵 추가, 업종별 버전 계획 `INDUSTRY_PRESETS.md` 신설.
 
 ## v1.1 — 2026-10-15
 

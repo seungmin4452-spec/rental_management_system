@@ -12,6 +12,7 @@
   - 앱 데이터 폴더가 `RentalDesk`로 바뀌어 개발 중 쓰던 `RentDeskLite` 폴더의 데이터는 자동으로 옮기지 않는다(출시 전이라 고객 데이터 없음). 필요하면 옛 앱 버전에서 백업 → 새 버전에서 복원(옛 이름 백업 복원 허용, `LEGACY_PRODUCTS`).
   - 기기 코드 계산에 제품명이 들어가므로 **기기 코드가 모두 바뀌고 기존 라이선스는 무효**. 개발용 라이선스는 다시 발급한다.
   - 그대로 둔 것: Python 패키지 `rentdesk`, `rentdesk.spec`/`rentdesk.iss` 파일 이름, `RENTDESK_*` 환경변수, Inno Setup `AppId`, 판매자 키 폴더 `~/RentDeskSellerKeys`(실제 서명 키 위치라 바꾸지 않음), 공증 프로필 이름 `rentdesk-notary`.
+- 제품 로드맵은 `PRD.md` 11.4, 업종별 버전 계획은 `INDUSTRY_PRESETS.md`(초안, 결정 대기).
 - M4 미완료 항목(Developer ID 서명·공증, Windows 네이티브 빌드, Python 미설치 PC 설치 검증, Mac↔Windows 실제 왕복 복원, CP-02~CP-10)과 M5 출시 항목은 그대로 남아 있다.
 
 ## 다음 할 일
