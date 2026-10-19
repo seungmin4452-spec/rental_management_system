@@ -31,6 +31,8 @@ class DocumentDialog(QDialog):
 
         self.preview = QTextBrowser()
         self.preview.setOpenLinks(False)
+        # 미리보기는 테마와 상관없이 종이처럼 흰 바탕·검은 글자(다크 모드에서 표 머리글이 안 보이던 문제)
+        self.preview.setObjectName("PaperPreview")
         preview_doc = document_output.text_document(document)
         self.preview.setDocument(preview_doc)
         preview_doc.setParent(self.preview)

@@ -136,6 +136,7 @@ class SettlementDialog(QDialog):
         lay.addWidget(self.state)
         lay.addWidget(self.final_box)
         lay.addWidget(self.details, 1)
+        lay.addStretch(0)  # 원장을 접었을 때 남는 높이는 아래 빈 공간으로(위쪽 칸이 늘어나지 않게)
         lay.addLayout(button_row(self.details_btn, close))
         self.refresh()
         # 반납 완료 예약은 정산 마무리만 보이고, 원장·직접 기록은 '자세히'에서 연다
@@ -144,10 +145,13 @@ class SettlementDialog(QDialog):
     def _show_details(self, show: bool) -> None:
         self.details.setVisible(show)
         self.details_btn.setText("자세히 접기" if show else "자세히 보기(원장·직접 기록)")
+        # 너비·위치는 그대로 두고 높이만 바꾼다(접을 때 adjustSize가 너비를 바꿔 위쪽 배치가 달라지던 문제)
         if show:
             self.resize(self.width(), max(self.height(), 720))
         else:
-            self.adjustSize()
+            self.layout().activate()
+            height = max(self.minimumHeight(), self.layout().sizeHint().height())
+            self.resize(self.width(), height)
 
     def refresh(self) -> None:
         st = self.ctx.settlements.get_settlement(self.order_id)

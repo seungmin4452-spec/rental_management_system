@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
 from rentdesk.domain.availability import ASSET_STATE_LABELS, AssetState
 from rentdesk.domain.models import ORDER_STATUS_LABELS, OrderStatus
 from rentdesk.platform.resources import get_resources_dir
+from rentdesk.ui.wheel_guard import install_wheel_guard
 
 # 한국어 OS에서는 Qt가 글꼴 이름을 한글로 알려준다("맑은 고딕") — 영문·한글 이름을 모두 둔다.
 FONT_FAMILIES = ["Pretendard", "Apple SD Gothic Neo", "애플 SD 산돌고딕 Neo", "Malgun Gothic", "맑은 고딕",
@@ -236,6 +237,9 @@ QComboBox QAbstractItemView {
     selection-color: $text; outline: 0;
 }
 
+/* 문서 미리보기: 테마와 상관없이 인쇄물처럼 흰 종이·검은 글자 */
+QTextBrowser#PaperPreview { background: #ffffff; color: #111111; }
+
 QScrollArea { background: transparent; border: none; }
 QScrollArea > QWidget > QWidget { background: transparent; }
 
@@ -349,6 +353,7 @@ def apply_theme(app: QApplication, *, dark: bool | None = None, follow_system: b
     app.setFont(font)
     app.setPalette(_palette(_current))
     app.setStyleSheet(build_stylesheet(_current))
+    install_wheel_guard(app)  # 선택하지 않은 입력칸은 휠로 값이 바뀌지 않게
     if follow_system and dark is None and not app.property("rentdesk_theme_hooked"):
         app.setProperty("rentdesk_theme_hooked", True)
         hints = QGuiApplication.styleHints()
