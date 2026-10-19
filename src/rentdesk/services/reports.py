@@ -118,6 +118,7 @@ class ReportService:
             "운영 상태: " + (LIFECYCLE_LABELS[lifecycle] if lifecycle else "전체"),
         ]
         today = current_time(self._clock).astimezone(SEOUL).date()
+        kits = repo.kit_names_by_asset(self._conn)
         return ReportTable(
             title="장비 목록",
             sheet_name="장비 목록",
@@ -129,12 +130,14 @@ class ReportService:
                 Column("모델", width=16), Column("일 대여료", ColumnType.WON),
                 Column("보증금", ColumnType.WON), Column("현재 상태", width=10),
                 Column("운영 상태", width=10), Column("보관 위치", width=12),
+                Column("세트", width=18),
             ),
             rows=tuple(
                 (
                     a.asset_code, a.name, a.category_name, a.brand or "", a.model or "",
                     a.daily_rate_won, a.deposit_won, ASSET_STATE_LABELS[states[a.id]],
                     LIFECYCLE_LABELS[a.lifecycle_status], a.location or "",
+                    ", ".join(kits.get(a.id, ())),
                 )
                 for a in assets
             ),
@@ -160,13 +163,14 @@ class ReportService:
                 Column("장비 수", ColumnType.INT, 8), Column("예약 시작", ColumnType.DATETIME, 17),
                 Column("반납 예정", ColumnType.DATETIME, 17), Column("상태", width=10),
                 Column("출고/반납", width=14), Column("예상 대여료", ColumnType.WON),
-                Column("예상 보증금", ColumnType.WON),
+                Column("예상 보증금", ColumnType.WON), Column("세트", width=18),
             ),
             rows=tuple(
                 (
                     r.order.order_no, r.customer_name, r.item_count, r.order.start_at,
                     r.order.due_at, ORDER_STATUS_LABELS[r.order.status], r.progress_label,
                     r.expected_total_rental_fee_won, r.expected_deposit_won,
+                    ", ".join(k.name for k in r.order.kits),
                 )
                 for r in rows
             ),

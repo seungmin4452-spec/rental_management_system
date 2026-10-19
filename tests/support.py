@@ -15,6 +15,7 @@ from rentdesk.services.checkout import CheckoutInput, CheckoutService
 from rentdesk.services.customers import CustomerInput, CustomerService
 from rentdesk.services.dashboard import DashboardService
 from rentdesk.services.extensions import ExtensionService
+from rentdesk.services.kits import KitService
 from rentdesk.services.maintenance import MaintenanceService
 from rentdesk.services.reports import ReportService
 from rentdesk.services.reservations import ReservationInput, ReservationService
@@ -45,6 +46,7 @@ class Services:
         self.conn = conn
         self.clock = clock
         self.assets = AssetService(conn, clock)
+        self.kits = KitService(conn, clock)
         self.customers = CustomerService(conn, clock)
         self.availability = AvailabilityService(conn, clock)
         self.reservations = ReservationService(conn, clock)

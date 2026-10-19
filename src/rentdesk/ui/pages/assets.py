@@ -1,4 +1,4 @@
-"""S-02 장비 관리."""
+"""S-02 장비 관리. [장비 목록] 탭과 [세트] 탭(MULTI_INDUSTRY_PLAN R4)."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLineEdit,
     QPushButton,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -21,6 +22,7 @@ from rentdesk.ui.dialogs.asset_dialog import AssetDialog
 from rentdesk.ui.dialogs.category_dialog import CategoryDialog
 from rentdesk.ui.dialogs.import_dialog import ImportDialog
 from rentdesk.ui.pages.base import Page
+from rentdesk.ui.pages.kits import KitsPanel
 from rentdesk.ui.widgets import DataTable, empty_hint
 
 LIFECYCLE_LABELS = {LifecycleStatus.ACTIVE: "운영 중", LifecycleStatus.RETIRED: "사용 중지"}
@@ -73,11 +75,21 @@ class AssetsPage(Page):
         actions.addWidget(self.category_btn)
         actions.addWidget(self.import_btn)
 
+        assets_tab = QWidget()
+        assets_lay = QVBoxLayout(assets_tab)
+        assets_lay.setContentsMargins(0, 8, 0, 0)
+        assets_lay.addLayout(filters)
+        assets_lay.addLayout(actions)
+        assets_lay.addWidget(self.empty)
+        assets_lay.addWidget(self.table, 1)
+        self.kits = KitsPanel(self.ctx, self.nav.data_changed)
+        self.kits.layout().setContentsMargins(0, 8, 0, 0)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(assets_tab, "장비 목록")
+        self.tabs.addTab(self.kits, "세트")
+
         lay = QVBoxLayout(self)
-        lay.addLayout(filters)
-        lay.addLayout(actions)
-        lay.addWidget(self.empty)
-        lay.addWidget(self.table, 1)
+        lay.addWidget(self.tabs, 1)
         self._load_categories()
         self.refresh()
 
@@ -110,6 +122,8 @@ class AssetsPage(Page):
         filtered = bool(self.query.text().strip()) or self.category.currentData() is not None
         self.empty.setVisible(not self.assets and not filtered)
         self._update_buttons()
+        if hasattr(self, "kits"):
+            self.kits.refresh()  # 장비 사용 중지·수정이 세트 경고·요금 합계에 반영되도록
 
     def selected_asset(self) -> Asset | None:
         key = self.table.selected_key()

@@ -31,6 +31,7 @@ from rentdesk.domain.models import (
     RentalOrder,
     ReturnCondition,
 )
+from rentdesk.domain.kits import Kit, KitDiscount, KitDiscountKind, OrderKit
 from rentdesk.domain.rates import RateRule, rate_rule_from_json, rate_rule_to_json
 from rentdesk.domain.timeutil import parse_utc_str, parse_utc_str_opt, to_utc_str
 
@@ -389,10 +390,13 @@ def _row_to_item(row: sqlite3.Row) -> RentalItem:
         return_note=row["return_note"],
         turnaround_buffer_snapshot_minutes=row["buffer_minutes"],
         rate_rule_snapshot=rate_rule_from_json(row["rate_rule_snapshot_json"]),
+        order_kit_id=row["order_kit_id"],
     )
 
 
-def _row_to_order(row: sqlite3.Row, items: Iterable[RentalItem]) -> RentalOrder:
+def _row_to_order(
+    row: sqlite3.Row, items: Iterable[RentalItem], kits: Iterable[OrderKit] = ()
+) -> RentalOrder:
     return RentalOrder(
         id=row["id"],
         order_no=row["order_no"],
@@ -408,6 +412,7 @@ def _row_to_order(row: sqlite3.Row, items: Iterable[RentalItem]) -> RentalOrder:
         updated_at=parse_utc_str(row["updated_at_utc"]),
         items=tuple(items),
         checkout_note=row["checkout_note"],
+        kits=tuple(kits),
     )
 
 
@@ -501,19 +506,24 @@ def insert_item(
     grace_minutes: int,
     buffer_minutes: int,
     rate_rule: RateRule,
+    order_kit_id: int | None = None,
 ) -> int:
     cur = conn.execute(
         """
         INSERT INTO rental_items (order_id, asset_id, status, daily_rate_snapshot_won,
                                   deposit_snapshot_won, late_multiplier_snapshot,
                                   grace_minutes_snapshot, turnaround_buffer_snapshot_minutes,
-                                  rate_rule_snapshot_json)
-        VALUES (?, ?, 'RESERVED', ?, ?, ?, ?, ?, ?)
+                                  rate_rule_snapshot_json, order_kit_id)
+        VALUES (?, ?, 'RESERVED', ?, ?, ?, ?, ?, ?, ?)
         """,
         (order_id, asset_id, daily_rate_won, deposit_won, str(late_multiplier), grace_minutes,
-         buffer_minutes, rate_rule_to_json(rate_rule)),
+         buffer_minutes, rate_rule_to_json(rate_rule), order_kit_id),
     )
     return int(cur.lastrowid)
+
+
+def set_item_kit(conn: sqlite3.Connection, item_id: int, order_kit_id: int | None) -> None:
+    conn.execute("UPDATE rental_items SET order_kit_id = ? WHERE id = ?", (order_kit_id, item_id))
 
 
 def update_item_snapshot(
@@ -571,7 +581,7 @@ def get_order(conn: sqlite3.Connection, order_id: int) -> RentalOrder | None:
     row = conn.execute("SELECT * FROM rental_orders WHERE id = ?", (order_id,)).fetchone()
     if row is None:
         return None
-    return _row_to_order(row, get_items(conn, order_id))
+    return _row_to_order(row, get_items(conn, order_id), list_order_kits(conn, order_id))
 
 
 def list_orders(
@@ -622,7 +632,12 @@ def list_orders(
     )
     for ir in item_rows:
         items_by_order[ir["order_id"]].append(_row_to_item(ir))
-    return [_row_to_order(r, items_by_order[r["id"]]) for r in rows]
+    kits_by_order: dict[int, list[OrderKit]] = {oid: [] for oid in order_ids}
+    for kr in conn.execute(
+        f"SELECT * FROM order_kits WHERE order_id IN ({_placeholders(len(order_ids))}) ORDER BY id", order_ids
+    ):
+        kits_by_order[kr["order_id"]].append(_row_to_order_kit(kr))
+    return [_row_to_order(r, items_by_order[r["id"]], kits_by_order[r["id"]]) for r in rows]
 
 
 def occupying_item_rows(
@@ -813,11 +828,12 @@ def insert_charge(
     amount_won: int,
     description: str | None,
     now: datetime,
+    order_kit_id: int | None = None,
 ) -> int:
     cur = conn.execute(
         "INSERT INTO charge_lines (order_id, rental_item_id, kind, amount_won, description,"
-        " created_at_utc) VALUES (?, ?, ?, ?, ?, ?)",
-        (order_id, rental_item_id, kind.value, amount_won, description, to_utc_str(now)),
+        " created_at_utc, order_kit_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (order_id, rental_item_id, kind.value, amount_won, description, to_utc_str(now), order_kit_id),
     )
     return int(cur.lastrowid)
 
@@ -1156,3 +1172,193 @@ def list_extensions(conn: sqlite3.Connection, order_id: int) -> list[OrderExtens
         )
         for row in rows
     ]
+
+
+# --------------------------------------------------------------------------- kits (M4.6 R4)
+
+
+def _discount_from_row(row: sqlite3.Row) -> KitDiscount:
+    percent = row["discount_percent"]
+    return KitDiscount(
+        kind=KitDiscountKind(row["discount_kind"]), won=row["discount_won"],
+        percent=None if percent is None else Decimal(percent),
+    )
+
+
+def _discount_params(discount: KitDiscount) -> tuple[str, int, str | None]:
+    return (
+        discount.kind.value, discount.won,
+        None if discount.percent is None else str(discount.percent),
+    )
+
+
+def _kits_from_rows(conn: sqlite3.Connection, rows: Sequence[sqlite3.Row]) -> list[Kit]:
+    ids = [r["id"] for r in rows]
+    if not ids:
+        return []
+    marks = _placeholders(len(ids))
+    members: dict[int, list[int]] = {i: [] for i in ids}
+    for r in conn.execute(
+        f"SELECT kit_id, asset_id FROM kit_assets WHERE kit_id IN ({marks}) ORDER BY kit_id, position", ids
+    ):
+        members[r["kit_id"]].append(r["asset_id"])
+    checklist: dict[int, list[str]] = {i: [] for i in ids}
+    for r in conn.execute(
+        f"SELECT kit_id, label FROM kit_checklist_items WHERE kit_id IN ({marks}) ORDER BY kit_id, position",
+        ids,
+    ):
+        checklist[r["kit_id"]].append(r["label"])
+    return [
+        Kit(
+            id=r["id"], name=r["name"], discount=_discount_from_row(r),
+            asset_ids=tuple(members[r["id"]]), checklist=tuple(checklist[r["id"]]),
+            note=r["note"], is_archived=bool(r["is_archived"]),
+        )
+        for r in rows
+    ]
+
+
+def list_kits(conn: sqlite3.Connection, *, include_archived: bool = False) -> list[Kit]:
+    sql = "SELECT * FROM kits"
+    if not include_archived:
+        sql += " WHERE is_archived = 0"
+    sql += " ORDER BY name"
+    return _kits_from_rows(conn, conn.execute(sql).fetchall())
+
+
+def get_kit(conn: sqlite3.Connection, kit_id: int) -> Kit | None:
+    kits = _kits_from_rows(conn, conn.execute("SELECT * FROM kits WHERE id = ?", (kit_id,)).fetchall())
+    return kits[0] if kits else None
+
+
+def get_kit_by_name(conn: sqlite3.Connection, name: str) -> Kit | None:
+    kits = _kits_from_rows(conn, conn.execute("SELECT * FROM kits WHERE name = ?", (name,)).fetchall())
+    return kits[0] if kits else None
+
+
+def insert_kit(
+    conn: sqlite3.Connection, *, name: str, discount: KitDiscount, note: str | None, now: datetime
+) -> int:
+    ts = to_utc_str(now)
+    cur = conn.execute(
+        "INSERT INTO kits (name, discount_kind, discount_won, discount_percent, note,"
+        " created_at_utc, updated_at_utc) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (name, *_discount_params(discount), note, ts, ts),
+    )
+    return int(cur.lastrowid)
+
+
+def update_kit(
+    conn: sqlite3.Connection, kit_id: int, *, name: str, discount: KitDiscount, note: str | None,
+    now: datetime,
+) -> None:
+    conn.execute(
+        "UPDATE kits SET name = ?, discount_kind = ?, discount_won = ?, discount_percent = ?, note = ?,"
+        " updated_at_utc = ? WHERE id = ?",
+        (name, *_discount_params(discount), note, to_utc_str(now), kit_id),
+    )
+
+
+def replace_kit_contents(
+    conn: sqlite3.Connection, kit_id: int, asset_ids: Sequence[int], checklist: Sequence[str]
+) -> None:
+    conn.execute("DELETE FROM kit_assets WHERE kit_id = ?", (kit_id,))
+    conn.executemany(
+        "INSERT INTO kit_assets (kit_id, asset_id, position) VALUES (?, ?, ?)",
+        [(kit_id, a, n) for n, a in enumerate(asset_ids)],
+    )
+    conn.execute("DELETE FROM kit_checklist_items WHERE kit_id = ?", (kit_id,))
+    conn.executemany(
+        "INSERT INTO kit_checklist_items (kit_id, position, label) VALUES (?, ?, ?)",
+        [(kit_id, n, label) for n, label in enumerate(checklist)],
+    )
+
+
+def set_kit_archived(conn: sqlite3.Connection, kit_id: int, archived: bool, *, now: datetime) -> None:
+    conn.execute(
+        "UPDATE kits SET is_archived = ?, updated_at_utc = ? WHERE id = ?",
+        (int(archived), to_utc_str(now), kit_id),
+    )
+
+
+def kit_names_by_asset(conn: sqlite3.Connection, *, include_archived: bool = False) -> dict[int, list[str]]:
+    """장비 id → 그 장비가 들어 있는 세트 이름들(이름순)."""
+    sql = "SELECT ka.asset_id, k.name FROM kit_assets ka JOIN kits k ON k.id = ka.kit_id"
+    if not include_archived:
+        sql += " WHERE k.is_archived = 0"
+    sql += " ORDER BY k.name"
+    result: dict[int, list[str]] = {}
+    for r in conn.execute(sql):
+        result.setdefault(r["asset_id"], []).append(r["name"])
+    return result
+
+
+def _checks_from_json(text: str | None) -> tuple[bool, ...] | None:
+    return None if text is None else tuple(bool(v) for v in json.loads(text))
+
+
+def _row_to_order_kit(row: sqlite3.Row) -> OrderKit:
+    return OrderKit(
+        id=row["id"], order_id=row["order_id"], kit_id=row["kit_id"], name=row["name"],
+        discount=_discount_from_row(row), checklist=tuple(json.loads(row["checklist_json"])),
+        checkout_checks=_checks_from_json(row["checkout_checks_json"]),
+        return_checks=_checks_from_json(row["return_checks_json"]),
+    )
+
+
+def list_order_kits(conn: sqlite3.Connection, order_id: int) -> list[OrderKit]:
+    rows = conn.execute("SELECT * FROM order_kits WHERE order_id = ? ORDER BY id", (order_id,))
+    return [_row_to_order_kit(r) for r in rows]
+
+
+def order_kit_names(conn: sqlite3.Connection, order_ids: Iterable[int]) -> dict[int, list[str]]:
+    ids = sorted(set(order_ids))
+    if not ids:
+        return {}
+    result: dict[int, list[str]] = {}
+    for r in conn.execute(
+        f"SELECT order_id, name FROM order_kits WHERE order_id IN ({_placeholders(len(ids))}) ORDER BY id",
+        ids,
+    ):
+        result.setdefault(r["order_id"], []).append(r["name"])
+    return result
+
+
+def insert_order_kit(
+    conn: sqlite3.Connection, *, order_id: int, kit_id: int, name: str, discount: KitDiscount,
+    checklist: Sequence[str],
+) -> int:
+    cur = conn.execute(
+        "INSERT INTO order_kits (order_id, kit_id, name, discount_kind, discount_won, discount_percent,"
+        " checklist_json) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (order_id, kit_id, name, *_discount_params(discount), json.dumps(list(checklist), ensure_ascii=False)),
+    )
+    return int(cur.lastrowid)
+
+
+def update_order_kit_snapshot(
+    conn: sqlite3.Connection, order_kit_id: int, *, name: str, discount: KitDiscount, checklist: Sequence[str]
+) -> None:
+    conn.execute(
+        "UPDATE order_kits SET name = ?, discount_kind = ?, discount_won = ?, discount_percent = ?,"
+        " checklist_json = ? WHERE id = ?",
+        (name, *_discount_params(discount), json.dumps(list(checklist), ensure_ascii=False), order_kit_id),
+    )
+
+
+def set_order_kit_checks(
+    conn: sqlite3.Connection, order_kit_id: int, *, checkout: Sequence[bool] | None = None,
+    returned: Sequence[bool] | None = None,
+) -> None:
+    if checkout is not None:
+        conn.execute(
+            "UPDATE order_kits SET checkout_checks_json = ? WHERE id = ?", (json.dumps(list(checkout)), order_kit_id)
+        )
+    if returned is not None:
+        conn.execute(
+            "UPDATE order_kits SET return_checks_json = ? WHERE id = ?", (json.dumps(list(returned)), order_kit_id)
+        )
+
+
+def delete_order_kit(conn: sqlite3.Connection, order_kit_id: int) -> None:
+    conn.execute("DELETE FROM order_kits WHERE id = ?", (order_kit_id,))

@@ -1,4 +1,7 @@
-"""출고 처리 (S-05). 확정 예약의 모든 장비를 한 번에 출고한다(부분 출고는 P1)."""
+"""출고 처리 (S-05). 확정 예약의 모든 장비를 한 번에 출고한다(부분 출고는 P1).
+
+세트가 담긴 예약은 구성품 체크리스트를 확인한다. 빠진 구성품은 경고만 하고 출고는 막지 않는다(R4).
+"""
 
 from __future__ import annotations
 
@@ -18,6 +21,7 @@ from rentdesk.domain.display import format_dt, format_won
 from rentdesk.domain.models import PaymentMethod, RentalOrder
 from rentdesk.services.checkout import CheckoutInput
 from rentdesk.ui import feedback, theme
+from rentdesk.ui.kit_checklist import KitChecklistBox
 from rentdesk.ui.widgets import (
     DataTable,
     FormErrors,
@@ -58,12 +62,14 @@ class CheckoutDialog(QDialog):
             f"<b>{order.order_no}</b> · 고객 {ctx.reservations.customer_name(order)}<br>"
             f"약정 {format_dt(order.start_at)} ~ {format_dt(order.due_at)}"
         )
-        items = DataTable(["장비번호", "일 대여료(예약 시)", "보증금(예약 시)"])
+        kit_names = {k.id: k.name for k in order.kits}
+        items = DataTable(["장비번호", "일 대여료(예약 시)", "보증금(예약 시)", "세트"])
         items.set_rows([
             (i.id, [i.asset_code, format_won(i.daily_rate_snapshot_won),
-                    format_won(i.deposit_snapshot_won)])
+                    format_won(i.deposit_snapshot_won), kit_names.get(i.order_kit_id, "")])
             for i in order.items if i.status.value == "RESERVED"
         ], align_right=(1, 2))
+        self.kit_checks = KitChecklistBox(order.kits, title="구성품 확인")
 
         self.amounts = QLabel()
         self.amounts.setWordWrap(True)
@@ -100,6 +106,7 @@ class CheckoutDialog(QDialog):
         lay = QVBoxLayout(self)
         lay.addWidget(info)
         lay.addWidget(items, 1)
+        lay.addWidget(self.kit_checks)
         lay.addWidget(self.amounts)
         lay.addLayout(form)
         lay.addWidget(self.blockers)
@@ -119,9 +126,10 @@ class CheckoutDialog(QDialog):
             max(0, q.expected_deposit_won - summary.deposit_held_won),
         )
         self.fill_btn.setEnabled(any(self._remaining))
+        kit_discount = f", 세트 할인 {format_won(q.kit_discount_won)}" if q.kit_discount_won else ""
         self.amounts.setText(
             f"받을 대여료: <b>{format_won(q.expected_total_rental_fee_won)}</b>"
-            f" ({q.days_label}, 할인 {format_won(q.discount_won)} 반영) · "
+            f" ({q.days_label}, 할인 {format_won(q.discount_won)}{kit_discount} 반영) · "
             f"받을 보증금: <b>{format_won(q.expected_deposit_won)}</b> · "
             f"선입금: 대여료 {format_won(summary.net_rental_receipts_won)}, "
             f"보증금 {format_won(summary.deposit_held_won)} · "
@@ -141,6 +149,7 @@ class CheckoutDialog(QDialog):
             checkout_at=self.checkout_at.value(), note=self.note.toPlainText(),
             rental_receipt_won=self.receipt.value(), deposit_in_won=self.deposit.value(),
             payment_method=self.method.currentData(),
+            kit_checks=self.kit_checks.checks(),
         )
         money = []
         if data.rental_receipt_won:
@@ -153,6 +162,9 @@ class CheckoutDialog(QDialog):
         )
         if money:
             text += "\n\n함께 기록할 금전 거래: " + ", ".join(money)
+        missing = self.kit_checks.missing_text()
+        if missing:
+            text += f"\n\n확인하지 않은 구성품(출고는 진행됩니다):\n{missing}"
         if not feedback.confirm(self, text, "출고 확인"):
             return False
         self.submit_btn.setEnabled(False)  # 반복 클릭 방지(서비스도 이중 출고를 거부)

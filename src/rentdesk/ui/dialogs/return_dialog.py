@@ -2,6 +2,7 @@
 
 품목별 실제 반납 시각·반납 상태·파손비·메모를 입력하고, 예측 연체료와 계산 근거를 보여준다.
 저장은 서비스가 하나의 트랜잭션으로 처리한다(상태 변경 + 연체/파손 청구 + 정비 블록).
+세트가 담긴 예약은 구성품 체크리스트를 다시 확인하고 결과를 저장한다(R4).
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from rentdesk.domain.models import ReturnCondition
 from rentdesk.services.availability import describe_conflict
 from rentdesk.services.returns import ReturnItemInput, ReturnResult
 from rentdesk.ui import feedback, theme
+from rentdesk.ui.kit_checklist import KitChecklistBox
 from rentdesk.ui.widgets import SeoulDateTimeEdit, WonSpinBox, button_row, now_seoul_minute
 
 CONDITION_LABELS = {ReturnCondition.GOOD: "정상", ReturnCondition.MAINTENANCE_REQUIRED: "정비 필요"}
@@ -101,6 +103,10 @@ class ReturnDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setWidget(grid_box)
 
+        out_kits = {i.order_kit_id for i in order.items if i.status.value == "OUT"}
+        self.kit_checks = KitChecklistBox(
+            [k for k in order.kits if k.id in out_kits], title="반납 구성품 확인"
+        )
         self.total = QLabel()
         select_all = QPushButton("전체 선택")
         select_all.clicked.connect(lambda: [r.check.setChecked(True) for r in self.rows])
@@ -115,6 +121,7 @@ class ReturnDialog(QDialog):
         if not self.rows:
             lay.addWidget(QLabel("반납할 대여 중 장비가 없습니다."))
         lay.addWidget(scroll, 1)
+        lay.addWidget(self.kit_checks)
         lay.addWidget(self.total)
         lay.addLayout(button_row(select_all, cancel, self.submit_btn))
         self._update_total()
@@ -172,10 +179,17 @@ class ReturnDialog(QDialog):
                          + (f" ({', '.join(extra)})" if extra else ""))
         text = ("아래 장비를 반납 처리합니다. 반납은 되돌릴 수 없으며 연체료·파손비가 청구됩니다.\n\n"
                 + "\n".join(lines))
+        missing = self.kit_checks.missing_text()
+        if missing:
+            text += ("\n\n확인하지 않은 구성품:\n" + missing
+                     + "\n빠진 구성품 비용은 장비 행의 파손비나 정산 화면의 조정으로 청구할 수 있습니다.")
         if not feedback.confirm(self, text, "반납 확인"):
             return False
         self.submit_btn.setEnabled(False)
-        result = feedback.run(self, lambda: self.ctx.returns.return_items(self.order_id, inputs))
+        kit_checks = self.kit_checks.checks()
+        result = feedback.run(
+            self, lambda: self.ctx.returns.return_items(self.order_id, inputs, kit_checks=kit_checks)
+        )
         if result is None:
             self._update_total()
             return False

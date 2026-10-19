@@ -55,7 +55,7 @@ class OrderDetailDialog(QDialog):
         self.header = QLabel()
         self.header.setWordWrap(True)
         self.items = DataTable(
-            ["장비번호", "상태", "일 대여료(스냅샷)", "보증금(스냅샷)", "실제 반납", "반납 상태", "반납 메모"]
+            ["장비번호", "상태", "일 대여료(스냅샷)", "보증금(스냅샷)", "실제 반납", "반납 상태", "반납 메모", "세트"]
         )
         self.money = QLabel()
         self.money.setWordWrap(True)
@@ -106,13 +106,23 @@ class OrderDetailDialog(QDialog):
                 f"연장: {format_dt(ext.previous_due_at)} → {format_dt(ext.new_due_at)}"
                 f" (+{ext.added_days}일, {format_won(ext.amount_won)})" + (f" · {ext.note}" if ext.note else "")
             )
+        for kit in order.kits:
+            text = f"세트: {kit.name} (세트 할인 {kit.discount.label})"
+            if kit.checkout_checks is not None:
+                miss = kit.checkout_missing
+                text += " · 출고 구성품 " + (f"<b>누락: {', '.join(miss)}</b>" if miss else "모두 확인")
+            if kit.return_checks is not None:
+                miss = kit.return_missing
+                text += " · 반납 구성품 " + (f"<b>누락: {', '.join(miss)}</b>" if miss else "모두 확인")
+            lines.append(text)
         self.header.setText("<br>".join(lines))
+        kit_names = {k.id: k.name for k in order.kits}
         self.items.set_rows([
             (i.id, [i.asset_code, ITEM_LABELS[i.status.value],
                     format_won(i.daily_rate_snapshot_won), format_won(i.deposit_snapshot_won),
                     format_dt(i.actual_return_at),
                     CONDITION_LABELS.get(i.return_condition.value, "") if i.return_condition else "",
-                    i.return_note or ""])
+                    i.return_note or "", kit_names.get(i.order_kit_id, "")])
             for i in order.items
         ], align_right=(2, 3))
 
@@ -126,8 +136,10 @@ class OrderDetailDialog(QDialog):
                 f" · 보증금 보유 <b>{format_won(s.deposit_held_won)}</b> · <b>{state}</b>"
             )
         elif q is not None:
+            kit_discount = f", 세트 할인 {format_won(q.kit_discount_won)}" if q.kit_discount_won else ""
             text = (f"예상 대여료 {format_won(q.expected_total_rental_fee_won)} ({q.days_label},"
-                    f" 할인 {format_won(q.discount_won)}) · 예상 보증금 {format_won(q.expected_deposit_won)}")
+                    f" 할인 {format_won(q.discount_won)}{kit_discount})"
+                    f" · 예상 보증금 {format_won(q.expected_deposit_won)}")
             if order.status == OrderStatus.CONFIRMED:
                 s = self.ctx.settlements.summary(self.order_id)
                 if has_ledger_activity(s):

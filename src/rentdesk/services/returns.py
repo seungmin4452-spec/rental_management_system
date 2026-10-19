@@ -7,12 +7,14 @@
 - `MAINTENANCE_REQUIRED`면 같은 트랜잭션에서 정비 블록(종료 미정)을 만들고 영향 예약을 경고한다.
 - 반납 시각+버퍼와 겹치는 후속 확정 예약도 자동 취소하지 않고 경고한다.
 - 마지막 품목이 반납되면 주문은 `COMPLETED`(정산 완료와는 별개).
+- 세트(R4): 반납할 때 다시 확인한 구성품 체크 결과를 저장한다(마지막 확인 결과로 덮어씀).
+  빠진 구성품 비용 청구는 R5(추가 비용)에서 다룬다.
 """
 
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -26,6 +28,7 @@ from rentdesk.domain.models import (
     RentalOrder,
     ReturnCondition,
 )
+from rentdesk.domain.kits import validate_checks
 from rentdesk.domain.pricing import LateFee, late_fee, late_fee_basis, validate_won
 from rentdesk.domain.timeutil import ensure_aware, format_seoul, to_utc
 from rentdesk.persistence import repositories as repo
@@ -143,8 +146,19 @@ class ReturnService:
         _check_return_time(order, at, now)
         return _late_preview(order, item, at)
 
-    def return_items(self, order_id: int, inputs: Sequence[ReturnItemInput]) -> ReturnResult:
+    def return_items(
+        self,
+        order_id: int,
+        inputs: Sequence[ReturnItemInput],
+        *,
+        kit_checks: Mapping[int, Sequence[bool]] | None = None,
+    ) -> ReturnResult:
+        """`kit_checks`: order_kits.id → 반납 때 확인한 구성품 체크 결과(체크리스트 줄마다 True/False)."""
         inputs = tuple(inputs)
+        if kit_checks is None:
+            kit_checks = {}
+        if not isinstance(kit_checks, Mapping):
+            raise ValidationError("kit_checks", "구성품 확인 결과가 올바르지 않습니다.")
         if not inputs:
             raise ValidationError("items", "반납할 장비를 1개 이상 선택해주세요.")
         ids = [i.item_id for i in inputs]
@@ -174,6 +188,13 @@ class ReturnService:
             order = self._get_order(order_id)
             if order.status != OrderStatus.IN_RENTAL:
                 raise InvalidStateError(self._not_returnable_message(order.status))
+            kits = {k.id: k for k in order.kits}
+            for order_kit_id, values in kit_checks.items():
+                if order_kit_id not in kits:
+                    raise ValidationError("kit_checks", "이 예약에 담긴 세트가 아닙니다.")
+                repo.set_order_kit_checks(
+                    self._conn, order_kit_id, returned=validate_checks(kits[order_kit_id].checklist, values)
+                )
 
             for data, returned_at, condition, damage, note, reason in cleaned:
                 item = self._find_item(order, data.item_id)

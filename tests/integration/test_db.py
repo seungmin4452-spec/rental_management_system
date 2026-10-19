@@ -35,7 +35,7 @@ def test_t21_every_connection_has_foreign_keys_on(db_path, conn):
 def test_initial_schema_created(conn):
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert EXPECTED_TABLES <= tables
-    assert current_schema_version(conn) == latest_schema_version() == 6
+    assert current_schema_version(conn) == latest_schema_version() == 7
     assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
 
 

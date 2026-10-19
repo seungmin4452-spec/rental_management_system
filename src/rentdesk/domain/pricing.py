@@ -10,9 +10,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
 
 from rentdesk.domain.errors import ValidationError
+from rentdesk.domain.kits import KitDiscount, kit_discount_won
+from rentdesk.domain.money import round_half_up, validate_won  # noqa: F401 - 기존 import 경로 유지
 from rentdesk.domain.rates import (
     DEFAULT_RATE_RULE,
     WEEKDAY_LABELS,
@@ -30,10 +32,6 @@ MONTH_DAYS = 30
 
 def _ceil_div(numerator: int, denominator: int) -> int:
     return -(-numerator // denominator)
-
-
-def round_half_up(value: Decimal) -> int:
-    return int(value.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def rental_days(start_at: datetime, due_at: datetime, rule: RateRule = DEFAULT_RATE_RULE) -> int:
@@ -57,15 +55,6 @@ def parse_multiplier(value: str | Decimal) -> Decimal:
     if not dec.is_finite() or dec < 0:
         raise ValidationError("late_multiplier", "연체 1일당 일 대여료의 배수는 0 이상의 숫자여야 합니다.")
     return dec
-
-
-def validate_won(field: str, value: object, *, label: str) -> int:
-    """원 단위 0 이상 정수 검증. bool/float/문자열 거부."""
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValidationError(field, f"{label}은(는) 원 단위 정수여야 합니다.")
-    if value < 0:
-        raise ValidationError(field, f"{label}은(는) 0 이상이어야 합니다.")
-    return value
 
 
 # --------------------------------------------------------------------------- 기간 요금
@@ -198,6 +187,17 @@ class PricedItem:
     daily_rate_won: int
     deposit_won: int
     rule: RateRule = DEFAULT_RATE_RULE
+    kit_key: int | None = None  # 같은 예약 안 세트 구분값(R4). None = 세트에 속하지 않음
+
+
+@dataclass(frozen=True)
+class KitDiscountLine:
+    """세트 할인 1줄(R4). 주문 할인과 별도로 표시·청구한다."""
+
+    kit_key: int
+    name: str
+    amount_won: int
+    label: str  # "5,000원" / "10%"
 
 
 @dataclass(frozen=True)
@@ -208,6 +208,16 @@ class OrderQuote:
     expected_total_rental_fee_won: int
     expected_deposit_won: int
     item_fees: tuple[PeriodFee, ...] = field(default=())
+    kit_discounts: tuple[KitDiscountLine, ...] = field(default=())
+
+    @property
+    def kit_discount_won(self) -> int:
+        return sum(k.amount_won for k in self.kit_discounts)
+
+    @property
+    def total_discount_won(self) -> int:
+        """주문 할인 + 세트 할인."""
+        return self.discount_won + self.kit_discount_won
 
     @property
     def uniform_days(self) -> bool:
@@ -223,26 +233,52 @@ class OrderQuote:
         return f"{self.rental_days}일" if self.uniform_days else f"장비별 최대 {self.rental_days}일"
 
 
+@dataclass(frozen=True)
+class KitQuoteInput:
+    kit_key: int
+    name: str
+    discount: KitDiscount
+
+
 def quote_order(
     items: Sequence[PricedItem],
     start_at: datetime,
     due_at: datetime,
     discount_won: int = 0,
+    kits: Sequence[KitQuoteInput] = (),
 ) -> OrderQuote:
+    """예약 견적. 세트 할인은 세트에 실제로 담긴 품목의 기간 요금 합 기준(R4).
+
+    합계 할인(주문 할인 + 세트 할인)은 기본 대여료를 넘을 수 없다. 세트 할인은 자기 세트 요금 합을
+    넘지 않게 자동으로 줄이므로, 넘치면 주문 할인 입력 오류로 알린다.
+    """
     fees = tuple(period_fee(i.daily_rate_won, start_at, due_at, i.rule) for i in items)
     base = sum(f.amount_won for f in fees)
     deposit = sum(item.deposit_won for item in items)
     validate_won("discount_won", discount_won, label="할인 금액")
-    if discount_won > base:
+    kit_lines = []
+    for kit in kits:
+        kit_fee = sum(f.amount_won for f, i in zip(fees, items, strict=True) if i.kit_key == kit.kit_key)
+        kit_lines.append(KitDiscountLine(
+            kit.kit_key, kit.name, kit_discount_won(kit.discount, kit_fee), kit.discount.label,
+        ))
+    kit_total = sum(k.amount_won for k in kit_lines)
+    if discount_won > base - kit_total:
+        if kit_total:
+            raise ValidationError(
+                "discount_won",
+                f"할인 금액은 기본 대여료에서 세트 할인({kit_total:,}원)을 뺀 금액을 초과할 수 없습니다.",
+            )
         raise ValidationError("discount_won", "할인 금액은 기본 대여료를 초과할 수 없습니다.")
     days = max((f.days for f in fees), default=rental_days(start_at, due_at))
     return OrderQuote(
         rental_days=days,
         base_rental_fee_won=base,
         discount_won=discount_won,
-        expected_total_rental_fee_won=base - discount_won,
+        expected_total_rental_fee_won=base - discount_won - kit_total,
         expected_deposit_won=deposit,
         item_fees=fees,
+        kit_discounts=tuple(kit_lines),
     )
 
 

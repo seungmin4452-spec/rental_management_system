@@ -301,7 +301,8 @@ expected_total_rental_fee_won = base_rental_fee_won - order_discount_won
 - 연장 추가 대여료 = Σ기간 요금(새 반납 예정) − Σ기간 요금(기존 반납 예정). 긴 단가로 넘어가 총액이 줄면 **추가 요금 0원, 환급 없음**.
 - 시간 단위 대여료는 두지 않는다(연체료만 시간 단위 선택 가능, 7.3).
 
-- 모든 할인은 `0 <= discount_won <= base_rental_fee_won`.
+- 모든 할인은 `0 <= discount_won <= base_rental_fee_won`. 세트 할인이 있으면 `discount_won + Σ세트 할인 <= base_rental_fee_won`.
+- **세트 할인(M4.6 R4)**: 세트마다 정액(원) 또는 비율(%) 중 하나. 정액 = `min(설정 금액, 세트 품목 기간 요금 합)`, 비율 = `round_half_up(세트 품목 기간 요금 합 × % / 100)`(0 < % ≤ 100). 세트 품목은 예약에 실제로 담긴(대체·제외 반영) 그 세트의 품목이다. 세트 이름·할인·구성품 체크리스트는 `order_kits`에 스냅샷(확정 때 다시 고정)하며, 이후 세트를 고쳐도 기존 확정 예약은 바뀌지 않는다. 연장 대여료에는 세트 할인을 자동 적용하지 않는다.
 - 예약 확정 시 장비별 단가/보증금을 `rental_items`에 **스냅샷**으로 복사하여 이후 장비 기본요금이 변해도 과거 예약 금액은 바뀌지 않게 한다.
 - 출고 전에 확정 예약의 시간을 수정하는 경우, 기존 스냅샷 단가로 기간에 따른 예상 금액을 다시 계산한다. 출고는 예약 시작 시각 이후이면서 약정 반납 시각 전에만 허용한다. 조기 출고/약정 기간 경과 후 출고는 예약 기간을 먼저 수정하도록 안내한다.
 - 출고 시 실제 대여료 청구 원장(`RENTAL`)을 생성한다. 미출고 예약을 취소하면 청구 원장이 남지 않는다.
@@ -332,7 +333,7 @@ late_fee_won = round_half_up((D * full_days + partial) * late_multiplier)
 #### 청구 원장 `charge_lines`
 
 - `RENTAL`: 출고 시 장비별 기본 대여료 **양수**.
-- `DISCOUNT`: 출고 시 예약 할인 **음수**(주문당 최대 1건).
+- `DISCOUNT`: 출고 시 예약 할인 **음수**(주문 할인 주문당 최대 1건 + 세트 할인 세트마다 최대 1건, `charge_lines.order_kit_id`로 구분).
 - `LATE`: 반납 시 장비별 연체료 **양수**.
 - `DAMAGE`: 반납 시 운영자가 입력한 파손비 **양수**.
 - `ADJUSTMENT`: P0에서 사용하지 않으며 추후 수정 이력 보존을 위한 확장 타입.
@@ -389,7 +390,9 @@ deposit_held = sum(DEPOSIT_IN) - sum(DEPOSIT_OUT) - net_deposit_applied
 | `rental_orders` | `id`, `order_no`, `customer_id`, `status`, `start_at_utc`, `due_at_utc`, `actual_checkout_at_utc`, `turnaround_buffer_snapshot_minutes`, `discount_won`, `notes`, `created_at_utc`, `updated_at_utc` | 예약번호 UNIQUE, 시작 < 반납 약정 |
 | `rental_items` | `id`, `order_id`, `asset_id`, `status`, `daily_rate_snapshot_won`, `deposit_snapshot_won`, `late_multiplier_snapshot`, `grace_minutes_snapshot`, `actual_return_at_utc`, `return_condition`, `return_note` | `UNIQUE(order_id, asset_id)`, 각 금액 >=0 |
 | `maintenance_blocks` | `id`, `asset_id`, `start_at_utc`, `end_at_utc`, `reason`, `created_at_utc`, `closed_at_utc` | 종료 `NULL` 허용, 시작 < 종료(값 존재 시) |
-| `charge_lines` | `id`, `order_id`, `rental_item_id`, `kind`, `amount_won`, `description`, `created_at_utc` | 청구+할인 부호 제약, 장비별 RENTAL/LATE 중복 방지 |
+| `charge_lines` | `id`, `order_id`, `rental_item_id`, `kind`, `amount_won`, `description`, `created_at_utc`, `order_kit_id` | 청구+할인 부호 제약, 장비별 RENTAL/LATE 중복 방지, 할인은 주문 1건 + 세트마다 1건 |
+| `kits`, `kit_assets`, `kit_checklist_items` | 세트 이름·할인(정액/비율)·숨김, 구성 장비(특정 장비 고정), 구성품 줄 | M4.6 R4. 세트 이름 UNIQUE, 세트에 든 장비는 삭제 불가 |
+| `order_kits` | `id`, `order_id`, `kit_id`, `name`, 할인, `checklist_json`, `checkout_checks_json`, `return_checks_json` | 예약별 세트 스냅샷. 출고 후 삭제 금지. `rental_items.order_kit_id`는 같은 예약의 세트만 |
 | `money_entries` | `id`, `order_id`, `kind`, `amount_won`, `payment_method`, `note`, `created_at_utc`, `related_entry_id` | 금액 >0, 역거래가 참조할 이전 행 포함 |
 | `app_settings` | `key`, `value_json` | 기본설정·상호 |
 | `audit_events` | `id`, `occurred_at_utc`, `entity_type`, `entity_id`, `action`, `description` | 개인 전화·이메일을 통째로 복제하지 않음 |

@@ -1,7 +1,8 @@
 """예약 작성/수정 3단계 (S-04, W-02).
 
 1. 고객·시작·약정 반납 일시
-2. 사용 가능한 장비 선택(표. 사용 불가 장비는 선택 불가 + 이유/겹치는 예약번호를 열로 표시)
+2. 사용 가능한 장비 선택(표. 사용 불가 장비는 선택 불가 + 이유/겹치는 예약번호를 열로 표시).
+   [세트 추가]로 세트 구성 장비를 한 번에 담는다(안 되는 장비는 같은 카테고리로 대체·빼기, R4).
 3. 예상 대여료·보증금·할인 확인 후 `임시 저장` 또는 `예약 확정`
 
 확정 시 충돌은 서비스가 DB 트랜잭션 안에서 다시 검사한다(화면 사전 검사만 신뢰하지 않음).
@@ -22,6 +23,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QPlainTextEdit,
     QPushButton,
     QStackedWidget,
@@ -35,12 +38,13 @@ from rentdesk.context import AppContext
 from rentdesk.domain.display import format_dt, format_won
 from rentdesk.domain.errors import ConflictError, DomainError, ValidationError
 from rentdesk.domain.models import OrderStatus, RentalOrder
+from rentdesk.services.kits import KitPick
 from rentdesk.services.reservations import ReservationInput
 from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import FormErrors, SeoulDateTimeEdit, WonSpinBox, next_hour
 
 STEP_TITLES = ["고객·기간", "장비 선택", "금액 확인"]
-ASSET_COLUMNS = ["선택", "관리번호", "장비명", "일 대여료", "보증금", "상태", "사용 불가 이유"]
+ASSET_COLUMNS = ["선택", "관리번호", "장비명", "일 대여료", "보증금", "상태", "사용 불가 이유", "세트"]
 
 
 class ReservationWizard(QDialog):
@@ -56,6 +60,13 @@ class ReservationWizard(QDialog):
         self.setMinimumSize(900, 540)
         self._selected: set[int] = set(i.asset_id for i in order.items
                                        if i.status.value != "CANCELED") if order else set(asset_ids)
+        # 세트로 담은 장비: 세트 id → 장비 id 목록(담은 순서), 표시용 이름
+        self._kits: dict[int, list[int]] = {}
+        self._kit_names: dict[int, str] = {}
+        if order:
+            for kit in order.kits:
+                self._kits[kit.kit_id] = [i.asset_id for i in order.items if i.order_kit_id == kit.id]
+                self._kit_names[kit.kit_id] = kit.name
 
         self.stack = QStackedWidget()
         self.stack.addWidget(self._build_step1(customer_id, start_at, due_at))
@@ -170,10 +181,24 @@ class ReservationWizard(QDialog):
         self.errors2 = QLabel()
         theme.set_tone(self.errors2, "danger")
         self.errors2.setWordWrap(True)
+        self.add_kit_btn = QPushButton("세트 추가")
+        self.add_kit_btn.setToolTip("세트 구성 장비를 한 번에 담습니다. 안 되는 장비는 같은 카테고리 장비로 바꿀 수 있습니다.")
+        self.add_kit_btn.clicked.connect(self.add_kit)
+        self.remove_kit_btn = QPushButton("선택 세트 빼기")
+        self.remove_kit_btn.clicked.connect(self.remove_selected_kit)
+        self.kit_list = QListWidget()
+        self.kit_list.setMaximumHeight(72)
+        self.kit_list.itemSelectionChanged.connect(self._update_kit_buttons)
+        kit_row = QHBoxLayout()
+        kit_row.addWidget(self.add_kit_btn)
+        kit_row.addWidget(self.kit_list, 1)
+        kit_row.addWidget(self.remove_kit_btn)
         lay.addLayout(filters)
         lay.addWidget(self.asset_table, 1)
+        lay.addLayout(kit_row)
         lay.addWidget(self.selected_label)
         lay.addWidget(self.errors2)
+        self._refresh_kit_list()
         return page
 
     def _build_step3(self) -> QWidget:
@@ -255,7 +280,8 @@ class ReservationWizard(QDialog):
             )
             table.setItem(r, 0, check)
             values = [a.asset_code, a.name, format_won(a.daily_rate_won), format_won(a.deposit_won),
-                      "사용 가능" if opt.available else "사용 불가", "" if opt.available else opt.short_reason]
+                      "사용 가능" if opt.available else "사용 불가", "" if opt.available else opt.short_reason,
+                      self._kit_name_of(a.id)]
             for c, value in enumerate(values, start=1):
                 cell = QTableWidgetItem(value)
                 cell.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -269,8 +295,71 @@ class ReservationWizard(QDialog):
         table.blockSignals(False)
         self._update_selected_label(options)
 
+    def _kit_of(self, asset_id: int) -> int | None:
+        return next((k for k, ids in self._kits.items() if asset_id in ids), None)
+
+    def _kit_name_of(self, asset_id: int) -> str:
+        kit_id = self._kit_of(asset_id)
+        return "" if kit_id is None else self._kit_names.get(kit_id, "")
+
+    def _kit_picks(self) -> list[KitPick]:
+        return [KitPick(k, list(ids)) for k, ids in self._kits.items() if ids]
+
+    def _refresh_kit_list(self) -> None:
+        codes = {a.id: a.asset_code for a in self.ctx.assets.search_assets(include_retired=True)}
+        self.kit_list.clear()
+        for kit_id, ids in self._kits.items():
+            item = QListWidgetItem(
+                f"{self._kit_names.get(kit_id, '세트')}: " + ", ".join(codes.get(i, str(i)) for i in ids)
+            )
+            item.setData(Qt.ItemDataRole.UserRole, kit_id)
+            self.kit_list.addItem(item)
+        self.kit_list.setVisible(bool(self._kits))
+        self._update_kit_buttons()
+
+    def _update_kit_buttons(self) -> None:
+        self.remove_kit_btn.setVisible(bool(self._kits))
+        self.remove_kit_btn.setEnabled(bool(self.kit_list.selectedItems()))
+
+    def apply_kit_pick(self, pick: KitPick, name: str) -> None:
+        """세트 담기(대체·제외 반영된 장비). 따로 담겨 있던 구성 장비는 세트로 옮긴다."""
+        self._kits[pick.kit_id] = list(pick.asset_ids)
+        self._kit_names[pick.kit_id] = name
+        self._selected |= set(pick.asset_ids)
+        self._refresh_kit_list()
+        self._load_assets()
+
+    def add_kit(self) -> None:
+        from rentdesk.ui.dialogs.kit_pick_dialog import KitPickDialog
+
+        in_kits = {a for ids in self._kits.values() for a in ids}
+        dlg = KitPickDialog(
+            self.ctx, self.start.value(), self.due.value(),
+            order_id=self.order.id if self.order else None,
+            taken=sorted(self._selected - in_kits), locked=sorted(in_kits),
+            exclude_kits=list(self._kits), parent=self,
+        )
+        if dlg.exec() and dlg.result_pick is not None and dlg.plan is not None:
+            self.apply_kit_pick(dlg.result_pick, dlg.plan.kit.name)
+
+    def remove_kit(self, kit_id: int) -> None:
+        """세트 빼기: 세트로 담은 장비도 예약에서 함께 뺀다."""
+        for asset_id in self._kits.pop(kit_id, []):
+            self._selected.discard(asset_id)
+        self._kit_names.pop(kit_id, None)
+        self._refresh_kit_list()
+        self._load_assets()
+
+    def remove_selected_kit(self) -> None:
+        items = self.kit_list.selectedItems()
+        if items:
+            self.remove_kit(items[0].data(Qt.ItemDataRole.UserRole))
+
     def _update_selected_label(self, options=None) -> None:
-        self.selected_label.setText(f"선택된 장비: {len(self._selected)}개")
+        in_kits = sum(len(ids) for ids in self._kits.values())
+        self.selected_label.setText(
+            f"선택된 장비: {len(self._selected)}개" + (f" (세트 {len(self._kits)}개 · {in_kits}개 포함)" if self._kits else "")
+        )
         if options is not None:
             blocked = [o for o in options if o.asset.id in self._selected and not o.available]
             self.errors2.setText(
@@ -286,11 +375,21 @@ class ReservationWizard(QDialog):
             self._selected.add(asset_id)
         else:
             self._selected.discard(asset_id)
+            kit_id = self._kit_of(asset_id)
+            if kit_id is not None:  # 세트 장비를 빼면 세트에서도 뺀다(마지막 장비면 세트도 빠짐)
+                self._kits[kit_id].remove(asset_id)
+                if not self._kits[kit_id]:
+                    del self._kits[kit_id]
+                    self._kit_names.pop(kit_id, None)
+                self._refresh_kit_list()
         self._update_selected_label()
 
     def set_selected(self, asset_ids) -> None:
-        """테스트·외부 호출용 장비 선택."""
+        """테스트·외부 호출용 장비 선택(빠진 장비는 세트에서도 뺀다)."""
         self._selected = set(asset_ids)
+        self._kits = {k: [a for a in ids if a in self._selected] for k, ids in self._kits.items()}
+        self._kits = {k: ids for k, ids in self._kits.items() if ids}
+        self._refresh_kit_list()
         self._load_assets()
 
     def _input(self) -> ReservationInput:
@@ -301,6 +400,7 @@ class ReservationWizard(QDialog):
             asset_ids=sorted(self._selected),
             discount_won=self.discount.value(),
             notes=self.notes.toPlainText(),
+            kits=self._kit_picks(),
         )
 
     def _update_quote(self) -> None:
@@ -309,15 +409,20 @@ class ReservationWizard(QDialog):
         }
         customer = self.customer.currentText()
         codes = ", ".join(names.get(i, str(i)) for i in sorted(self._selected))
+        kits = "".join(
+            f"<br>세트: {self._kit_names.get(k, '세트')} ({', '.join(names.get(i, str(i)) for i in ids)})"
+            for k, ids in self._kits.items()
+        )
         self.summary.setText(
             f"고객: <b>{customer}</b><br>기간: {format_dt(self.start.value())} ~ "
-            f"{format_dt(self.due.value())}<br>장비: {codes}"
+            f"{format_dt(self.due.value())}<br>장비: {codes}{kits}"
         )
         self.errors3.clear()
         try:
             q = self.ctx.reservations.preview_quote(
                 sorted(self._selected), self.start.value(), self.due.value(),
                 self.discount.value(), order_id=self.order.id if self.order else None,
+                kits=self._kit_picks(),
             )
         except DomainError as exc:
             if not self.errors3.show(exc):
@@ -327,8 +432,11 @@ class ReservationWizard(QDialog):
             sorted(self._selected), self.start.value(), self.due.value(),
             order_id=self.order.id if self.order else None,
         )
+        kit_text = "".join(
+            f" − 세트 할인({k.name}, {k.label}) {format_won(k.amount_won)}" for k in q.kit_discounts if k.amount_won
+        )
         self.quote_label.setText(
-            f"대여일수 {q.days_label} · 기본 대여료 {format_won(q.base_rental_fee_won)}"
+            f"대여일수 {q.days_label} · 기본 대여료 {format_won(q.base_rental_fee_won)}{kit_text}"
             f" − 할인 {format_won(q.discount_won)} = <b>{format_won(q.expected_total_rental_fee_won)}</b>"
             f"<br>보증금 예상: <b>{format_won(q.expected_deposit_won)}</b>"
             + "".join(f"<br>{line}" for line in price_lines)
@@ -387,7 +495,7 @@ class ReservationWizard(QDialog):
         if field in ("customer_id", "start_at", "due_at"):
             self._show_step(0)
             return self.errors1.show(exc)
-        if field == "asset_ids":
+        if field in ("asset_ids", "kits"):
             self._show_step(1)
             self.errors2.setText(exc.message)
             return True

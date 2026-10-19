@@ -18,6 +18,7 @@ from rentdesk.services.common import Clock, current_time, default_clock
 from rentdesk.services.customers import CustomerService
 from rentdesk.services.dashboard import DashboardService
 from rentdesk.services.extensions import ExtensionService
+from rentdesk.services.kits import KitService
 from rentdesk.services.licensing import LicenseService
 from rentdesk.services.maintenance import MaintenanceService
 from rentdesk.services.reports import ReportService
@@ -38,6 +39,7 @@ class AppContext:
     # 엑셀 가져오기 전 백업 폴더. 실제 데이터일 때만 앱이 넣는다(예제 데이터는 백업하지 않음).
     import_backup_dir: Path | None = None
     assets: AssetService = field(init=False)
+    kits: KitService = field(init=False)
     customers: CustomerService = field(init=False)
     availability: AvailabilityService = field(init=False)
     reservations: ReservationService = field(init=False)
@@ -57,6 +59,7 @@ class AppContext:
     def __post_init__(self) -> None:
         c, k = self.conn, self.clock
         self.assets = AssetService(c, k)
+        self.kits = KitService(c, k)
         self.customers = CustomerService(c, k)
         self.availability = AvailabilityService(c, k)
         self.reservations = ReservationService(c, k)

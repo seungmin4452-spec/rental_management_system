@@ -426,6 +426,11 @@ class AssetService:
                 raise InvalidStateError(
                     "예약 또는 정비 이력이 있는 장비는 삭제할 수 없습니다. 사용 중지를 이용해주세요."
                 )
+            kits = repo.kit_names_by_asset(self._conn, include_archived=True).get(asset_id)
+            if kits:
+                raise InvalidStateError(
+                    f"세트({', '.join(kits)})에 들어 있는 장비는 삭제할 수 없습니다. 세트에서 먼저 빼주세요."
+                )
             repo.delete_asset(self._conn, asset_id)
             repo.insert_audit(
                 self._conn, entity_type="asset", entity_id=asset_id, action="DELETE",

@@ -5,6 +5,8 @@
   화면의 사전 검사(AvailabilityService)만 신뢰하지 않는다.
 - 확정 시 장비 단가/보증금, 유예시간/연체 배수/반납 후 준비 시간, 요금 규칙을 품목별 스냅샷으로 저장한다.
   운영 설정·요금 규칙은 장비 카테고리 설정이 있으면 그 값, 없으면 가게 기본값(MULTI_INDUSTRY_PLAN R2·R3).
+- 세트(R4)는 예약을 빠르게 만드는 묶음이다. 세트 이름·할인·구성품 체크리스트를 예약별로 스냅샷하고
+  (확정 때 다시 고정), 가용성·요금은 지금처럼 구성 장비 하나하나 기준으로 처리한다.
 """
 
 from __future__ import annotations
@@ -34,13 +36,22 @@ from rentdesk.domain.models import (
     category_sort_key,
 )
 from rentdesk.domain.policy import policy_basis
-from rentdesk.domain.pricing import OrderQuote, PricedItem, quote_order, rental_days, validate_won
+from rentdesk.domain.kits import OrderKit, check_kit_pick
+from rentdesk.domain.pricing import (
+    KitQuoteInput,
+    OrderQuote,
+    PricedItem,
+    quote_order,
+    rental_days,
+    validate_won,
+)
 from rentdesk.domain.timeutil import ensure_aware, to_seoul, to_utc
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
 from rentdesk.services.availability import describe_conflict, find_conflicts
 from rentdesk.services.common import Clock, clean_optional, current_time, default_clock
 from rentdesk.domain.rates import DayCountMethod, RateRule
+from rentdesk.services.kits import KitPick
 from rentdesk.services.settings import policies_for_assets, rate_rules_for_assets, read_policy, read_rate_rule
 
 MAX_ITEMS_PER_ORDER = 30
@@ -55,6 +66,7 @@ class ReservationInput:
     asset_ids: Sequence[int]
     discount_won: int = 0
     notes: str | None = None
+    kits: Sequence[KitPick] = ()  # R4: 세트로 담은 장비(asset_ids의 부분집합, 세트끼리 겹치지 않음)
 
 
 @dataclass(frozen=True)
@@ -65,6 +77,34 @@ class _Clean:
     asset_ids: tuple[int, ...]
     discount_won: int
     notes: str | None
+    kits: tuple[tuple[int, tuple[int, ...]], ...] = ()
+
+
+def _clean_kits(picks: object, asset_ids: tuple[int, ...]) -> tuple[tuple[int, tuple[int, ...]], ...]:
+    if isinstance(picks, str) or not isinstance(picks, Sequence):
+        raise ValidationError("kits", "세트 선택 값이 올바르지 않습니다.")
+    chosen = set(asset_ids)
+    seen_kits: set[int] = set()
+    in_kits: set[int] = set()
+    result = []
+    for pick in picks:
+        if not isinstance(pick, KitPick) or isinstance(pick.kit_id, bool) or not isinstance(pick.kit_id, int):
+            raise ValidationError("kits", "세트 선택 값이 올바르지 않습니다.")
+        ids = tuple(pick.asset_ids)
+        if any(isinstance(a, bool) or not isinstance(a, int) for a in ids):
+            raise ValidationError("kits", "세트 장비 값이 올바르지 않습니다.")
+        if pick.kit_id in seen_kits:
+            raise ValidationError("kits", "같은 세트를 한 예약에 두 번 담을 수 없습니다.")
+        if not ids:
+            raise ValidationError("kits", "장비가 하나도 없는 세트가 있습니다. 세트를 빼고 진행해주세요.")
+        if not set(ids) <= chosen:
+            raise ValidationError("kits", "세트 장비가 예약 장비 목록에 없습니다.")
+        if len(set(ids)) != len(ids) or in_kits & set(ids):
+            raise ValidationError("kits", "한 장비를 두 세트에 담을 수 없습니다.")
+        seen_kits.add(pick.kit_id)
+        in_kits |= set(ids)
+        result.append((pick.kit_id, ids))
+    return tuple(result)
 
 
 def _clean_input(data: ReservationInput) -> _Clean:
@@ -93,16 +133,33 @@ def _clean_input(data: ReservationInput) -> _Clean:
         asset_ids=asset_ids,
         discount_won=validate_won("discount_won", data.discount_won, label="할인 금액"),
         notes=clean_optional(data.notes, "notes", "메모", 2000),
+        kits=_clean_kits(data.kits, asset_ids),
     )
 
 
 def quote_items(
-    items: Sequence[RentalItem], start_at: datetime, due_at: datetime, discount_won: int
+    items: Sequence[RentalItem],
+    start_at: datetime,
+    due_at: datetime,
+    discount_won: int,
+    kits: Sequence[OrderKit] = (),
 ) -> OrderQuote:
+    """품목 스냅샷 기준 견적. 세트 할인은 세트에 담긴(취소되지 않은) 품목 요금 합 기준."""
     return quote_order(
-        [PricedItem(i.daily_rate_snapshot_won, i.deposit_snapshot_won, i.rate_rule_snapshot) for i in items],
+        [
+            PricedItem(i.daily_rate_snapshot_won, i.deposit_snapshot_won, i.rate_rule_snapshot, i.order_kit_id)
+            for i in items
+        ],
         start_at, due_at, discount_won,
+        [KitQuoteInput(k.id, k.name, k.discount) for k in kits],
     )
+
+
+def quote_for_order(order: RentalOrder, items: Sequence[RentalItem] | None = None) -> OrderQuote:
+    """주문 스냅샷 견적. `items`를 주지 않으면 취소되지 않은 품목."""
+    if items is None:
+        items = [i for i in order.items if i.status != ItemStatus.CANCELED]
+    return quote_items(items, order.start_at, order.due_at, order.discount_won, order.kits)
 
 
 @dataclass(frozen=True)
@@ -133,7 +190,7 @@ def order_row(order: RentalOrder, customer_name: str) -> OrderRow:
     items = [i for i in order.items if i.status != ItemStatus.CANCELED]
     if order.status == OrderStatus.CANCELED:
         items = list(order.items)
-    quote = quote_items(items, order.start_at, order.due_at, order.discount_won)
+    quote = quote_for_order(order, items)
     return OrderRow(
         order=order,
         customer_name=customer_name,
@@ -194,8 +251,7 @@ class ReservationService:
 
     def quote(self, order: RentalOrder) -> OrderQuote:
         """주문 스냅샷 기준 예상 대여료/보증금. 취소 품목은 제외."""
-        items = [i for i in order.items if i.status != ItemStatus.CANCELED]
-        return quote_items(items, order.start_at, order.due_at, order.discount_won)
+        return quote_for_order(order)
 
     def preview_quote(
         self,
@@ -205,30 +261,45 @@ class ReservationService:
         discount_won: int = 0,
         *,
         order_id: int | None = None,
+        kits: Sequence[KitPick] = (),
     ) -> OrderQuote:
         """예약 작성 3단계 화면용 예상 금액.
 
         신규/임시저장 예약은 현재 장비 단가 기준(확정 시 다시 스냅샷).
         `order_id`가 확정 예약이면 기존 품목은 스냅샷 단가, 새로 추가한 품목만 현재 단가.
+        세트 할인은 이미 담긴 세트면 그 스냅샷, 새로 담는 세트면 현재 세트 설정 기준(구분값 = 세트 id).
         """
         assets = repo.get_assets(self._conn, list(asset_ids))
         if len(assets) != len(set(asset_ids)):
             raise ValidationError("asset_ids", "존재하지 않는 장비가 포함되어 있습니다.")
         snapshots: dict[int, RentalItem] = {}
+        order_kits: dict[int, OrderKit] = {}
         if order_id is not None:
             order = self.get_order(order_id)
             if order.status == OrderStatus.CONFIRMED:
                 snapshots = {i.asset_id: i for i in order.items}
+            order_kits = {k.kit_id: k for k in order.kits}
+        kit_of = {a: pick.kit_id for pick in kits for a in pick.asset_ids}
         rules = rate_rules_for_assets(self._conn, assets.values())
         priced = [
             PricedItem(
                 snapshots[a.id].daily_rate_snapshot_won, snapshots[a.id].deposit_snapshot_won,
-                snapshots[a.id].rate_rule_snapshot,
+                snapshots[a.id].rate_rule_snapshot, kit_of.get(a.id),
             )
-            if a.id in snapshots else PricedItem(a.daily_rate_won, a.deposit_won, rules[a.id])
+            if a.id in snapshots else PricedItem(a.daily_rate_won, a.deposit_won, rules[a.id], kit_of.get(a.id))
             for a in (assets[asset_id] for asset_id in dict.fromkeys(asset_ids))
         ]
-        return quote_order(priced, to_utc(start_at), to_utc(due_at), discount_won)
+        kit_inputs = []
+        for pick in kits:
+            snapshot = order_kits.get(pick.kit_id)
+            if snapshot is not None:
+                kit_inputs.append(KitQuoteInput(pick.kit_id, snapshot.name, snapshot.discount))
+                continue
+            kit = repo.get_kit(self._conn, pick.kit_id)
+            if kit is None:
+                raise ValidationError("kits", "세트를 찾을 수 없습니다.")
+            kit_inputs.append(KitQuoteInput(pick.kit_id, kit.name, kit.discount))
+        return quote_order(priced, to_utc(start_at), to_utc(due_at), discount_won, kit_inputs)
 
     def policy_basis(self, asset_ids: Sequence[int]) -> list[str]:
         """예약 마법사 근거 문구(R2·R3): 장비 카테고리별 준비 시간·연체 기준·요금 규칙과 출처.
@@ -321,16 +392,29 @@ class ReservationService:
             for asset_id, item in existing.items():
                 if asset_id not in clean.asset_ids:
                     repo.delete_item(self._conn, item.id)
+            previous_members = {
+                k.id: {i.asset_id for i in order.items if i.order_kit_id == k.id} for k in order.kits
+            }
+            kit_of, removed = self._sync_kits(order_id, clean.kits, assets, order.kits, previous_members)
+            for asset_id, item in existing.items():
+                if asset_id in clean.asset_ids and item.order_kit_id != kit_of.get(asset_id):
+                    repo.set_item_kit(self._conn, item.id, kit_of.get(asset_id))
             for asset_id in clean.asset_ids:
                 if asset_id not in existing:
-                    self._insert_item(order_id, assets[asset_id], policies[asset_id], rules[asset_id])
+                    self._insert_item(
+                        order_id, assets[asset_id], policies[asset_id], rules[asset_id], kit_of.get(asset_id)
+                    )
+            for kit in removed:
+                repo.delete_order_kit(self._conn, kit.id)
             repo.update_order_header(
                 self._conn, order_id, customer_id=clean.customer_id,
                 start_at=clean.start_at, due_at=clean.due_at,
                 discount_won=clean.discount_won, notes=clean.notes, now=now,
             )
             items = repo.get_items(self._conn, order_id)
-            quote_items(items, clean.start_at, clean.due_at, clean.discount_won)
+            quote_items(
+                items, clean.start_at, clean.due_at, clean.discount_won, repo.list_order_kits(self._conn, order_id)
+            )
 
             if order.status == OrderStatus.CONFIRMED:
                 self._raise_if_conflicts(
@@ -394,10 +478,6 @@ class ReservationService:
                 clean.start_at, clean.due_at, now, require_future_start=confirm
             )
             rules = rate_rules_for_assets(self._conn, assets.values())
-            quote_order(
-                [PricedItem(a.daily_rate_won, a.deposit_won, rules[a.id]) for a in assets.values()],
-                clean.start_at, clean.due_at, clean.discount_won,
-            )
             shop = read_policy(self._conn)
             policies = policies_for_assets(self._conn, assets.values())
             order_id = repo.insert_order(
@@ -412,8 +492,16 @@ class ReservationService:
                 notes=clean.notes,
                 now=now,
             )
+            kit_of, _ = self._sync_kits(order_id, clean.kits, assets, (), {})
             for asset_id in clean.asset_ids:
-                self._insert_item(order_id, assets[asset_id], policies[asset_id], rules[asset_id])
+                self._insert_item(
+                    order_id, assets[asset_id], policies[asset_id], rules[asset_id], kit_of.get(asset_id)
+                )
+            # 할인 한도(주문 할인 + 세트 할인 ≤ 기본 대여료) 검증. 실패하면 트랜잭션 전체 롤백.
+            quote_items(
+                repo.get_items(self._conn, order_id), clean.start_at, clean.due_at, clean.discount_won,
+                repo.list_order_kits(self._conn, order_id),
+            )
             repo.insert_audit(
                 self._conn, entity_type="rental_order", entity_id=order_id, action="CREATE_DRAFT",
                 description=None, now=now,
@@ -444,8 +532,16 @@ class ReservationService:
                 late_multiplier=policy.late_multiplier, grace_minutes=policy.grace_minutes,
                 buffer_minutes=policy.turnaround_buffer_minutes, rate_rule=rules[item.asset_id],
             )
+        # 세트 이름·할인·체크리스트도 확정 시점 값으로 다시 고정(숨기거나 지운 세트는 담을 때 값 유지)
+        for order_kit in order.kits:
+            kit = repo.get_kit(self._conn, order_kit.kit_id)
+            if kit is not None and not kit.is_archived:
+                repo.update_order_kit_snapshot(
+                    self._conn, order_kit.id, name=kit.name, discount=kit.discount, checklist=kit.checklist
+                )
         quote_items(
-            repo.get_items(self._conn, order_id), order.start_at, order.due_at, order.discount_won
+            repo.get_items(self._conn, order_id), order.start_at, order.due_at, order.discount_won,
+            repo.list_order_kits(self._conn, order_id),
         )
         self._raise_if_conflicts(
             asset_ids, order.start_at, order.due_at,
@@ -460,12 +556,65 @@ class ReservationService:
             description=order.order_no, now=now,
         )
 
-    def _insert_item(self, order_id: int, asset: Asset, policy: RentalPolicy, rule: RateRule) -> None:
+    def _insert_item(
+        self, order_id: int, asset: Asset, policy: RentalPolicy, rule: RateRule, order_kit_id: int | None = None
+    ) -> None:
         repo.insert_item(
             self._conn, order_id=order_id, asset_id=asset.id,
             daily_rate_won=asset.daily_rate_won, deposit_won=asset.deposit_won,
             late_multiplier=policy.late_multiplier, grace_minutes=policy.grace_minutes,
-            buffer_minutes=policy.turnaround_buffer_minutes, rate_rule=rule,
+            buffer_minutes=policy.turnaround_buffer_minutes, rate_rule=rule, order_kit_id=order_kit_id,
+        )
+
+    def _sync_kits(
+        self,
+        order_id: int,
+        picks: Sequence[tuple[int, tuple[int, ...]]],
+        assets: Mapping[int, Asset],
+        previous: Sequence[OrderKit],
+        previous_members: Mapping[int, set[int]],
+    ) -> tuple[dict[int, int], list[OrderKit]]:
+        """세트 선택을 예약 세트 스냅샷에 반영. (장비 id → order_kits.id, 빼야 할 기존 세트) 반환.
+
+        새로 담는 세트는 지금 세트 설정을 스냅샷하고, 구성 장비가 아니면 같은 카테고리 대체만 허용한다.
+        이미 담긴 세트는 스냅샷을 유지한다(그 세트에 있던 장비만 남기면 검사 없이, 새 장비가 있으면
+        지금 세트 구성 기준으로 대체 규칙 검사).
+        """
+        by_kit = {k.kit_id: k for k in previous}
+        kit_of: dict[int, int] = {}
+        kept: set[int] = set()
+        for kit_id, ids in picks:
+            snapshot = by_kit.get(kit_id)
+            kit = repo.get_kit(self._conn, kit_id)
+            if snapshot is None:
+                if kit is None:
+                    raise ValidationError("kits", "세트를 찾을 수 없습니다.")
+                if kit.is_archived:
+                    raise ValidationError("kits", f"숨긴 세트 '{kit.name}'은(는) 예약에 담을 수 없습니다.")
+                self._check_pick(kit.name, kit.asset_ids, ids, assets)
+                order_kit_id = repo.insert_order_kit(
+                    self._conn, order_id=order_id, kit_id=kit_id, name=kit.name, discount=kit.discount,
+                    checklist=kit.checklist,
+                )
+            else:
+                if not set(ids) <= previous_members.get(snapshot.id, set()):
+                    if kit is None:
+                        raise ValidationError("kits", f"세트 '{snapshot.name}'에 장비를 더 담을 수 없습니다.")
+                    self._check_pick(snapshot.name, kit.asset_ids, ids, assets)
+                order_kit_id = snapshot.id
+            kept.add(order_kit_id)
+            for asset_id in ids:
+                kit_of[asset_id] = order_kit_id
+        return kit_of, [k for k in previous if k.id not in kept]
+
+    def _check_pick(
+        self, name: str, member_ids: Sequence[int], picked: Sequence[int], assets: Mapping[int, Asset]
+    ) -> None:
+        members = repo.get_assets(self._conn, list(member_ids))
+        check_kit_pick(
+            {a.id: a.category_id for a in members.values()},
+            {a: assets[a].category_id for a in picked},
+            kit_name=name,
         )
 
     def _raise_if_conflicts(

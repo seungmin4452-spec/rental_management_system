@@ -11,6 +11,7 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
+from rentdesk.domain.kits import OrderKit
 from rentdesk.domain.rates import DEFAULT_RATE_RULE, RateRule
 
 
@@ -184,6 +185,7 @@ class RentalItem:
     return_note: str | None
     turnaround_buffer_snapshot_minutes: int = 0  # M4.6 R2: 품목별 반납 후 준비 시간(확정 시 스냅샷)
     rate_rule_snapshot: RateRule = DEFAULT_RATE_RULE  # M4.6 R3: 품목별 요금 규칙(확정 시 스냅샷)
+    order_kit_id: int | None = None  # M4.6 R4: 예약에 담긴 세트(order_kits.id). None = 세트 아님
 
 
 @dataclass(frozen=True)
@@ -202,6 +204,7 @@ class RentalOrder:
     updated_at: datetime
     items: tuple[RentalItem, ...] = field(default=())
     checkout_note: str | None = None
+    kits: tuple[OrderKit, ...] = field(default=())  # M4.6 R4: 예약에 담긴 세트 스냅샷
 
 
 @dataclass(frozen=True)
