@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from rentdesk.context import AppContext
+from rentdesk.domain.license_terms import expiry_notice
 from rentdesk.services.auto_backup import AutoBackupSettings
 from rentdesk.services.search import RESULT_KIND_LABELS, ResultKind, SearchResult
 from rentdesk.ui import feedback, theme
@@ -238,7 +239,18 @@ class MainWindow(QMainWindow):
             self.sidebar_status.setText("예제 데이터 모드")
             theme.set_tone(self.sidebar_status, "warning")
             return
-        if self.ctx.license is not None and self.ctx.license.check().valid:
+        check = self.ctx.license.check() if self.ctx.license is not None else None
+        if check is not None and check.valid:
+            notice = check.info and expiry_notice(check.info.expires_at, self.ctx.license.now())
+            if notice:
+                # 만료 7일 전부터(K4). 연락처는 넣지 않고 크몽 메시지로 안내한다.
+                self.sidebar_status.setText(notice)
+                self.sidebar_status.setWordWrap(True)
+                self.sidebar_status.setToolTip(
+                    "사용 기간이 끝나면 실제 데이터 화면이 열리지 않습니다(데이터는 그대로 보관). "
+                    "계속 사용하려면 크몽 주문 메시지로 문의해주세요.")
+                theme.set_tone(self.sidebar_status, "warning")
+                return
             self.sidebar_status.setText("정품 · 이 PC 1대")
             theme.set_tone(self.sidebar_status, "success")
             return

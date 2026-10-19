@@ -3,11 +3,15 @@
 > 이 문서는 단계가 끝날 때마다 **덮어써서 최신 상태만** 남긴다. 지난 내역은 git 커밋 로그, `docs/PROGRESS_REPORT.md`(M0~M4 요약), `USABILITY_PLAN.md` "진행 기록"(M4.5 단계별), `OPEN_QUESTIONS.md`(결정 근거)에서 확인한다.
 > 새 세션은 **이 문서 → `CLAUDE.md` → `USABILITY_PLAN.md` → `TASKS.md`** 순서로 읽으면 바로 이어서 작업할 수 있다.
 
-## 현재 상태 (2026-10-19): **M4.6 범용화 R1~R7 완료 → 크몽 판매 준비(K 단계) 시작**
+## 현재 상태 (2026-10-19): **크몽 판매 준비(K 단계) 진행 중 — K1·K3·K4·K5·K8 완료**
 
-- **2026-10-19 크몽 등록 문구·이미지 확정.** Windows 11 x64만 먼저 판매, 사용자는 **크몽 심사를 바로 신청**하기로 함 → 첫 주문 전에 Windows 설치 파일(K1)과 깨끗한 PC 검증(K2)이 끝나야 한다. 가격·정책 결정은 `KMONG_LAUNCH_PLAN.md` 0장, 등록 원문은 `docs/kmong_listing.md`, 이미지는 `docs/kmong/`.
-- **다음 할 일은 `KMONG_LAUNCH_PLAN.md`의 K1~K12**(필수: K1·K2·K3·K5·K6·K7·K9·K10. 사용자 결정: 맥북에서만 발급, 만료 임박 안내, 업데이트 미구매 시 새 버전 차단). 바로 시작할 것: Inno Setup 6 설치 → 버전 1.0.0 → `scripts\build_windows.ps1`.
-- 커밋 안 된 이전 작업이 있다: `ui/wheel_guard.py`(새 파일), `document_dialog.py`·`settlement_dialog.py`·`theme.py` 수정, `tests/ui_smoke/test_usability_fixes.py`. 이번 세션에서 만든 것이 아니므로 내용 확인 후 커밋(K10).
+- 진행 계획·체크리스트는 **`KMONG_LAUNCH_PLAN.md`**(1장 체크박스, 3장 진행 기록). 등록 원문 `docs/kmong_listing.md`(STANDARD는 사용자가 49,900원으로 변경).
+- **이번 세션(Windows 11 Pro x64)**: 앱 버전 1.0.0. 라이선스 `updates_through`(1.0.x 무료, 1.1↑ 업데이트 구매 후 재발급) — `domain/license_terms.py`, 상태 `UPDATE_NOT_COVERED`. 판매자 도구 cp949 수정·`--months`·`--updates-through`·`--package`·`--order`, 발급 내역 열 확장. 만료 7일 전 안내(사이드바·설정). 오픈소스 고지(`scripts/make_notices.py` → `resources/legal/THIRD_PARTY_NOTICES.txt`, 도움말에서 표시). 고객 문서 `docs/USER_GUIDE.md`, `docs/RELEASE_NOTES.md`, `docs/PRIVACY_AND_LICENSE.md`(초안), `docs/customer/INSTALL_GUIDE.md`(+`scripts/make_guide_shots.py`).
+- **Windows 설치 파일 첫 빌드 성공**: `dist\RentalDesk_1.0.0_win-x64_setup.exe`(커밋 전 작업 트리 기준). Inno Setup 6.7.3은 사용자 범위(`%LOCALAPPDATA%\Programs\Inno Setup 6`)에 설치됨. 전체 테스트 989 passed / 3 skipped / 0 failed.
+- **아직 커밋하지 않았다**(사용자 확인 대기). DB 마이그레이션 없음(스키마 7).
+- **다음 할 일**: K2 깨끗한 PC 검증(SmartScreen 캡처 → 설치 안내서 그림 1~5, PDF), K7 약관 확정, K9 KIPRIS, K10 커밋·main 병합·v1.0.0 태그 후 그 커밋에서 다시 빌드, 맥북에서 `generate_license.py issue --months 1` 실제 실행 확인.
+- 판단 대기: K4 "앱을 켜 둔 채 만료 시각이 지나면 다음 실행 전까지 사용 가능" — 문서에만 기록(권장안). 크몽 FAQ Q10 "데이터와 라이선스는 그대로 유지"는 유료 업데이트 때 새 라이선스 파일이 필요하므로 문구 보완 권장.
+
 - 아래는 M4.6까지의 기록이다.
 
 - **M4.6 R1("기타" 카테고리)·R2(카테고리별 운영 설정, 품목별 준비 시간 스냅샷) 완료**, Windows PC에서 커밋해 브랜치 `m4.5-usability`로 푸시. 맥북에서는 `git fetch && git switch m4.5-usability && git pull` 후 `pip install -e '.[dev,build]'`(새 의존성 없음)로 이어간다. 상세·다음 작업 위치는 `MULTI_INDUSTRY_PLAN.md` "진행 기록".
@@ -78,8 +82,9 @@ scripts/build_macos.sh                # .app + .dmg (ad-hoc 서명, 공증 생�
 
 | 명령 | 환경 | 결과 |
 |---|---|---|
-| `pytest -q --deselect tests/unit/test_licensing.py::test_seller_script_keygen_issue_verify` | Windows 11 x64 (10.0.26200), Python 3.12.10, PySide6 6.7.3 | **543 passed, 3 skipped** (U10 완료 시점) |
-| 위에서 뺀 1개 | 같은 PC | **실패(기존 문제, U0~U6과 무관)**: 판매자 스크립트 `generate_license.py`가 한국어 Windows 콘솔 인코딩(cp949)으로 출력하는데 테스트가 UTF-8로 읽음. Windows에서 라이선스를 발급하면 같은 문제가 날 수 있음. 아직 고치지 않음 |
+| `pytest -q` (K 단계, deselect 불필요) | Windows 11 x64 (10.0.26200), Python 3.12.10, PySide6 6.7.3 | **989 passed, 3 skipped** (2026-10-19 빌드 안) |
+| `pytest -q --deselect tests/unit/test_licensing.py::test_seller_script_keygen_issue_verify` | 같은 PC | 543 passed, 3 skipped (U10 완료 시점) |
+| 위에서 뺀 1개 | 같은 PC | **2026-10-19 K3에서 해결됨.** 당시 실패: 판매자 스크립트 `generate_license.py`가 한국어 Windows 콘솔 인코딩(cp949)으로 출력하는데 테스트가 UTF-8로 읽음. Windows에서 라이선스를 발급하면 같은 문제가 날 수 있음. 아직 고치지 않음 |
 | `python -m rentdesk --self-check <json>` | 같은 PC | ok |
 | 같은 명령 (M4.6 R1·R2 완료 시점) | Windows 11 x64, 같은 환경 | **580 passed, 3 skipped** |
 | 같은 명령 (M4.6 R3 완료 시점) | Windows 11 x64, 같은 환경 | **685 passed, 3 skipped** |

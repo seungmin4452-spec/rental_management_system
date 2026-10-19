@@ -32,6 +32,7 @@ datas = [
     (str(ROOT / "src" / "rentdesk" / "resources" / "icons" / "*.svg"), "rentdesk/resources/icons"),
     (str(ROOT / "src" / "rentdesk" / "resources" / "support" / "support.json"), "rentdesk/resources/support"),
     (str(ROOT / "src" / "rentdesk" / "resources" / "starter" / "*.json"), "rentdesk/resources/starter"),
+    (str(ROOT / "src" / "rentdesk" / "resources" / "legal" / "THIRD_PARTY_NOTICES.txt"), "rentdesk/resources/legal"),
 ]
 
 a = Analysis(  # noqa: F821

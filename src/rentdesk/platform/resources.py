@@ -50,3 +50,8 @@ def get_support_info() -> SupportInfo:
     if not contact:
         return DEFAULT_SUPPORT
     return SupportInfo(contact=contact, manual_url=url if url.startswith("https://") else "")
+
+
+def get_third_party_notices_path() -> Path:
+    """오픈소스 라이선스 고지문. `scripts/make_notices.py`로 생성한다(K6)."""
+    return get_resources_dir() / "legal" / "THIRD_PARTY_NOTICES.txt"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import csv
 import json
 import subprocess
 import sys
@@ -265,3 +266,127 @@ def test_seller_script_refuses_key_inside_repo(tmp_path):
     result = _script("keygen", "--out", str(inside))
     assert result.returncode == 2
     assert not inside.exists() and not inside.parent.exists()
+
+
+# ------------------------------------------------------------------ 업데이트 허용 버전 (K5)
+
+
+def _check(text, key, code, version):
+    return verify_license(text, public_key=key.verify_key, machine_code=code, now=NOW, app_version=version)
+
+
+def test_issued_license_records_updates_through(key, code):
+    payload = json.loads(_issue(key, code, updates_through="1.1"))["license"]
+    assert payload["updates_through"] == "1.1"
+    assert json.loads(_issue(key, code))["license"]["updates_through"] == "1.0"
+
+
+@pytest.mark.parametrize(("version", "status"), [
+    ("1.0.0", LicenseStatus.VALID),
+    ("1.0.3", LicenseStatus.VALID),
+    ("1.1.0", LicenseStatus.UPDATE_NOT_COVERED),
+    ("2.0.0", LicenseStatus.UPDATE_NOT_COVERED),
+])
+def test_version_gate(key, code, version, status):
+    result = _check(_issue(key, code, updates_through="1.0"), key, code, version)
+    assert result.status == status
+    if status != LicenseStatus.VALID:
+        assert result.info is not None and result.info.updates_through == "1.0"
+
+
+def test_reissued_license_unlocks_new_version(key, code):
+    assert _check(_issue(key, code, updates_through="1.1"), key, code, "1.1.0").valid
+
+
+def test_legacy_license_without_field_allows_1_0(key, code):
+    """K5 이전 발급분(필드 없음)은 서명 그대로 1.0.x까지 사용, 1.1부터 업데이트 필요."""
+    payload = {
+        "format_version": 1, "license_id": "legacy", "product": "RentalDesk", "edition": "standard",
+        "customer_label": "OO렌탈", "machine_code": code, "issued_at_utc": "2026-10-16T00:00:00Z",
+        "expires_at_utc": None,
+    }
+    sig = base64.b64encode(key.sign(canonical_payload(payload)).signature).decode()
+    text = json.dumps({"license": payload, "signature": sig})
+    assert _check(text, key, code, "1.0.5").valid
+    assert _check(text, key, code, "1.1.0").status == LicenseStatus.UPDATE_NOT_COVERED
+
+
+def test_tampered_updates_through_is_rejected(key, code):
+    doc = json.loads(_issue(key, code, updates_through="1.0"))
+    doc["license"]["updates_through"] = "9.9"
+    assert _check(json.dumps(doc), key, code, "1.1.0").status == LicenseStatus.BAD_SIGNATURE
+
+
+def test_signed_but_bad_updates_through_is_malformed(key, code):
+    doc = json.loads(_issue(key, code))
+    doc["license"]["updates_through"] = "latest"
+    doc["signature"] = base64.b64encode(key.sign(canonical_payload(doc["license"])).signature).decode()
+    assert _check(json.dumps(doc), key, code, "1.0.0").status == LicenseStatus.MALFORMED
+
+
+def test_issue_rejects_bad_updates_through(key, code):
+    with pytest.raises(ValueError):
+        _issue(key, code, updates_through="1.0.0")
+
+
+def test_service_blocks_new_version_without_touching_license_file(tmp_path, key, device, code):
+    old_app = LicenseService(tmp_path / "license", device, public_key_hex=key.verify_key.encode().hex(),
+                             clock=lambda: NOW, app_version="1.0.0")
+    src = tmp_path / "l.json"
+    src.write_text(_issue(key, code, updates_through="1.0"), encoding="utf-8")
+    old_app.install(src)
+    new_app = LicenseService(tmp_path / "license", device, public_key_hex=key.verify_key.encode().hex(),
+                             clock=lambda: NOW, app_version="1.1.0")
+    assert new_app.check().status == LicenseStatus.UPDATE_NOT_COVERED
+    assert old_app.license_path.exists()  # 지우지 않음 → 이전 버전으로 돌아가면 그대로 사용
+    assert old_app.check().valid
+    with pytest.raises(LicenseError) as err:
+        new_app.install(src)
+    assert err.value.status == LicenseStatus.UPDATE_NOT_COVERED
+    paid = tmp_path / "paid.json"
+    paid.write_text(_issue(key, code, updates_through="1.1"), encoding="utf-8")
+    assert new_app.install(paid).valid
+
+
+# ------------------------------------------------------------------ 판매자 스크립트 (K3)
+
+
+def test_seller_script_one_month_and_ledger(tmp_path, code):
+    key_path = tmp_path / "keys" / "signing_key.json"
+    assert _script("keygen", "--out", str(key_path)).returncode == 0
+    out = tmp_path / "standard.json"
+    issued = _script("issue", "--key", str(key_path), "--machine-code", code, "--customer", "OO렌탈",
+                     "--package", "standard", "--order", "K-123", "--months", "1", "--out", str(out))
+    assert issued.returncode == 0, issued.stderr
+    assert "만료:" in issued.stdout and "1.0.x까지" in issued.stdout
+    payload = json.loads(out.read_text(encoding="utf-8"))["license"]
+    assert payload["expires_at_utc"] is not None and payload["updates_through"] == "1.0"
+    with open(key_path.parent / "issued_licenses.csv", newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert rows[-1]["package"] == "STANDARD" and rows[-1]["kmong_order"] == "K-123"
+    assert rows[-1]["updates_through"] == "1.0" and rows[-1]["app_version"]
+
+    both = _script("issue", "--key", str(key_path), "--machine-code", code, "--customer", "A",
+                   "--months", "1", "--expires", "2027-01-01", "--out", str(tmp_path / "x.json"))
+    assert both.returncode == 2 and "함께" in both.stderr
+    bad = _script("issue", "--key", str(key_path), "--machine-code", code, "--customer", "A",
+                  "--updates-through", "1.0.0", "--out", str(tmp_path / "y.json"))
+    assert bad.returncode == 2 and not (tmp_path / "y.json").exists()
+
+
+def test_seller_script_upgrades_old_ledger_header(tmp_path, code):
+    key_path = tmp_path / "keys" / "signing_key.json"
+    assert _script("keygen", "--out", str(key_path)).returncode == 0
+    ledger = key_path.parent / "issued_licenses.csv"
+    ledger.write_text(
+        "license_id,issued_at_utc,customer_label,machine_code,edition,expires_at_utc,note\n"
+        "old-1,2026-10-16T00:00:00Z,예전렌탈,AAAA-AAAA-AAAA-AAAA-AAAA,standard,,메모\n",
+        encoding="utf-8",
+    )
+    assert _script("issue", "--key", str(key_path), "--machine-code", code, "--customer", "새렌탈",
+                   "--package", "DELUXE", "--out", str(tmp_path / "n.json")).returncode == 0
+    with open(ledger, newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    assert [r["license_id"] for r in rows][0] == "old-1"
+    assert rows[0]["note"] == "메모" and rows[0]["package"] == ""
+    assert rows[1]["customer_label"] == "새렌탈" and rows[1]["package"] == "DELUXE"

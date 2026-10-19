@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from rentdesk.domain.display import format_dt
+from rentdesk.domain.license_terms import expiry_notice
 from rentdesk.services.licensing import LicenseCheck, LicenseService, format_machine_code
 from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import button_row
@@ -68,12 +69,19 @@ class LicensePanel(QWidget):
     def refresh(self) -> LicenseCheck:
         result = self.service.check()
         text = result.message
+        notice = None
         if result.valid and result.info is not None:
             text += f"\n사용자: {result.info.customer_label} · 발급일: {format_dt(result.info.issued_at)}"
             if result.info.expires_at is not None:
                 text += f" · 만료: {format_dt(result.info.expires_at)}"
+            else:
+                text += " · 기간 제한 없음"
+            text += f"\n사용 가능 버전: {result.info.updates_through}.x까지(오류 수정 버전 포함)"
+            notice = expiry_notice(result.info.expires_at, self.service.now())
+            if notice:
+                text += f"\n{notice}. 계속 사용하려면 크몽 주문 메시지로 문의해주세요."
         self.status_label.setText(text)
-        theme.set_tone(self.status_label, None if result.valid else "danger")
+        theme.set_tone(self.status_label, "warning" if notice else (None if result.valid else "danger"))
         code = self.service.machine_code()
         self.code.setText(format_machine_code(code) if code else "확인할 수 없음")
         return result

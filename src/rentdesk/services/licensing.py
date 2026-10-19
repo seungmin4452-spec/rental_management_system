@@ -6,6 +6,9 @@
   원본 하드웨어 식별자는 화면·파일·로그 어디에도 남지 않는다.
 - 검사 실패 시 이유를 알려주고 예제 데이터 모드만 허용한다. 실제 데이터는 삭제·변경하지 않는다.
 - 오프라인 서명 파일은 완전한 복제 방지책이 아니며 기본적인 구매 확인 용도다.
+- `updates_through`(예: "1.0")까지의 앱 버전만 실행한다(K5). 오류 수정 버전(1.0.x)은 항상 허용,
+  1.1 이상은 업데이트 구매 후 같은 기기 코드로 재발급한 라이선스가 필요하다. 이 필드가 없는
+  예전 라이선스는 1.0까지 허용한다.
 """
 
 from __future__ import annotations
@@ -25,8 +28,9 @@ from pathlib import Path
 from nacl.exceptions import BadSignatureError, CryptoError
 from nacl.signing import SigningKey, VerifyKey
 
-from rentdesk import PRODUCT
+from rentdesk import PRODUCT, __version__
 from rentdesk.domain.errors import DomainError
+from rentdesk.domain.license_terms import DEFAULT_UPDATES_THROUGH, is_version_covered, parse_series
 from rentdesk.domain.timeutil import parse_utc_str, to_utc_str
 from rentdesk.license_public_key import PUBLIC_KEY_HEX
 from rentdesk.platform.device_id import DeviceIdProvider
@@ -48,6 +52,7 @@ class LicenseStatus(StrEnum):
     WRONG_PRODUCT = "WRONG_PRODUCT"
     WRONG_DEVICE = "WRONG_DEVICE"
     EXPIRED = "EXPIRED"
+    UPDATE_NOT_COVERED = "UPDATE_NOT_COVERED"
     DEVICE_UNAVAILABLE = "DEVICE_UNAVAILABLE"
 
 
@@ -61,7 +66,15 @@ STATUS_MESSAGES = {
         "이 라이선스는 다른 PC용으로 발급되었습니다. PC·운영체제를 바꾸었다면 아래 기기 코드를 "
         "판매자에게 보내 사용권 이전(재발급)을 요청해주세요."
     ),
-    LicenseStatus.EXPIRED: "라이선스 사용 기간이 끝났습니다. 판매자에게 문의해주세요.",
+    LicenseStatus.EXPIRED: (
+        "라이선스 사용 기간이 끝났습니다. 저장된 실제 데이터는 그대로 있으며, 새 라이선스 파일을 "
+        "등록하면 이어서 사용할 수 있습니다. 판매자에게 문의해주세요."
+    ),
+    LicenseStatus.UPDATE_NOT_COVERED: (
+        "이 라이선스로는 지금 설치된 새 버전을 사용할 수 없습니다(기능 업데이트는 별도 구매). "
+        "업데이트를 구매하면 새 라이선스 파일을 받을 수 있고, 이전 버전을 다시 설치해도 "
+        "실제 데이터를 그대로 이어서 사용할 수 있습니다. 판매자에게 문의해주세요."
+    ),
     LicenseStatus.DEVICE_UNAVAILABLE: "이 PC의 기기 코드를 확인할 수 없습니다. 판매자에게 문의해주세요.",
 }
 
@@ -83,6 +96,7 @@ class LicenseInfo:
     machine_code: str
     issued_at: datetime
     expires_at: datetime | None
+    updates_through: str = DEFAULT_UPDATES_THROUGH
 
 
 @dataclass(frozen=True)
@@ -131,6 +145,7 @@ def issue_license(
     issued_at: datetime,
     edition: str = "standard",
     expires_at: datetime | None = None,
+    updates_through: str | None = None,
     license_id: str | None = None,
 ) -> str:
     """서명된 라이선스 파일 내용(JSON 문자열). 판매자 발급 스크립트와 테스트에서만 쓴다."""
@@ -142,6 +157,8 @@ def issue_license(
     label = customer_label.strip()
     if not label or len(label) > 100:
         raise ValueError("고객 표시명은 1~100자여야 합니다.")
+    series = updates_through or DEFAULT_UPDATES_THROUGH
+    parse_series(series)  # 형식 검사(ValueError)
     payload = {
         "format_version": LICENSE_FORMAT_VERSION,
         "license_id": license_id or str(uuid.uuid4()),
@@ -151,6 +168,7 @@ def issue_license(
         "machine_code": code,
         "issued_at_utc": to_utc_str(issued_at),
         "expires_at_utc": to_utc_str(expires_at) if expires_at else None,
+        "updates_through": series,
     }
     signature = signing_key.sign(canonical_payload(payload)).signature
     return json.dumps(
@@ -166,6 +184,8 @@ def _parse_info(payload: dict) -> LicenseInfo:
     expires = payload.get("expires_at_utc")
     if expires is not None and not isinstance(expires, str):
         raise ValueError("expires")
+    series = payload.get("updates_through", DEFAULT_UPDATES_THROUGH)
+    parse_series(series)  # 서명은 맞지만 값이 이상하면 MALFORMED
     return LicenseInfo(
         license_id=payload["license_id"],
         product=payload["product"],
@@ -174,11 +194,14 @@ def _parse_info(payload: dict) -> LicenseInfo:
         machine_code=payload["machine_code"],
         issued_at=parse_utc_str(payload["issued_at_utc"]),
         expires_at=parse_utc_str(expires) if expires else None,
+        updates_through=series,
     )
 
 
-def verify_license(text: str, *, public_key: VerifyKey, machine_code: str, now: datetime) -> LicenseCheck:
-    """서명 → 제품 → 기기 → 기간 순으로 검사한다. 문자열 비교만으로 인증하지 않는다(PRD 11.1)."""
+def verify_license(
+    text: str, *, public_key: VerifyKey, machine_code: str, now: datetime, app_version: str = __version__,
+) -> LicenseCheck:
+    """서명 → 제품 → 기기 → 기간 → 버전 순으로 검사한다. 문자열 비교만으로 인증하지 않는다(PRD 11.1)."""
     try:
         doc = json.loads(text)
         payload = doc["license"]
@@ -201,6 +224,8 @@ def verify_license(text: str, *, public_key: VerifyKey, machine_code: str, now: 
         return LicenseCheck(LicenseStatus.WRONG_DEVICE, info)
     if info.expires_at is not None and now >= info.expires_at:
         return LicenseCheck(LicenseStatus.EXPIRED, info)
+    if not is_version_covered(app_version, info.updates_through):
+        return LicenseCheck(LicenseStatus.UPDATE_NOT_COVERED, info)
     return LicenseCheck(LicenseStatus.VALID, info)
 
 
@@ -214,11 +239,13 @@ class LicenseService:
         *,
         public_key_hex: str = PUBLIC_KEY_HEX,
         clock: Clock = default_clock,
+        app_version: str = __version__,
     ) -> None:
         self._dir = license_dir
         self._device = device_provider
         self._public_key = VerifyKey(bytes.fromhex(public_key_hex))
         self._clock = clock
+        self._app_version = app_version
         self._machine_code: str | None = None
 
     @property
@@ -239,7 +266,10 @@ class LicenseService:
         if code is None:
             return LicenseCheck(LicenseStatus.DEVICE_UNAVAILABLE)
         return verify_license(text, public_key=self._public_key, machine_code=code,
-                              now=current_time(self._clock))
+                              now=current_time(self._clock), app_version=self._app_version)
+
+    def now(self) -> datetime:
+        return current_time(self._clock)
 
     def check(self) -> LicenseCheck:
         try:

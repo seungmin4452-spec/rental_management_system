@@ -1,5 +1,17 @@
 # RentalDesk 문서 변경 이력
 
+> 앱 버전별 고객용 변경 내용은 `docs/RELEASE_NOTES.md`에 적는다. 이 파일은 기획·개발 문서 이력이다.
+
+## 앱 1.0.0 준비 — 2026-10-19 (KMONG_LAUNCH_PLAN K 단계)
+
+- 앱 버전 `0.1.0` → **`1.0.0`**(판매 첫 버전). 유료 업데이트를 버전 단위로 구분한다.
+- 라이선스에 `updates_through`(예: `1.0`) 추가 — 오류 수정 버전(1.0.x)은 허용, 1.1 이상은 업데이트 구매 후 재발급 라이선스 필요. 필드 없는 예전 라이선스는 1.0까지 허용(K5). 서명 형식(`format_version` 1)은 그대로.
+- 판매자 발급 도구: 한국어 Windows 출력 인코딩(cp949) 오류 수정, `--months`(1개월 라이선스), `--updates-through`, `--package`, `--order`, 발급 내역 열 추가(예전 파일 자동 확장)(K3).
+- 1개월 라이선스 만료 7일 전 안내(사이드바·설정 > 라이선스), 만료 후 새 라이선스로 기존 데이터 이어 쓰기 통합 테스트(K4).
+- 오픈소스 라이선스 고지문(`resources/legal/THIRD_PARTY_NOTICES.txt`, `scripts/make_notices.py`)과 [도움말 > 프로그램 정보 > 오픈소스 라이선스](K6).
+- 고객 문서 신설: `docs/USER_GUIDE.md`, `docs/RELEASE_NOTES.md`, `docs/PRIVACY_AND_LICENSE.md`(초안), `docs/customer/INSTALL_GUIDE.md`(그림 일부는 K2에서 캡처)(K6).
+- Windows 빌드: Inno Setup 6 사용자 범위 설치 경로(`%LOCALAPPDATA%\Programs\Inno Setup 6`)도 찾도록 `build_windows.ps1` 수정(K1).
+
 ## v1.2 — 2026-10-16
 
 - 제품명을 **RentDesk Lite → RentalDesk(렌탈데스크)**로 변경. 출시 전이라 앱 데이터 폴더·기기 코드·라이선스 `product`·백업 manifest·번들 ID·설치 파일 이름까지 바꿨다. 이름 변경 전 백업은 복원을 허용한다.

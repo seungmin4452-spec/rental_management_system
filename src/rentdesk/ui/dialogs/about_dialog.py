@@ -6,13 +6,21 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import QDialog, QFormLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtGui import QDesktopServices, QFontDatabase
+from PySide6.QtWidgets import (
+    QDialog,
+    QFormLayout,
+    QLabel,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from rentdesk import __version__
 from rentdesk.platform import paths as platform_paths
 from rentdesk.platform.environment import get_environment_info
-from rentdesk.platform.resources import SupportInfo, get_support_info
+from rentdesk.platform.resources import SupportInfo, get_support_info, get_third_party_notices_path
 from rentdesk.ui import feedback, theme
 from rentdesk.ui.widgets import button_row
 
@@ -55,7 +63,9 @@ class AboutDialog(QDialog):
         data_btn.clicked.connect(lambda: open_folder(self, platform_paths.get_app_data_dir))
         logs_btn = QPushButton("오류 기록 폴더 열기")
         logs_btn.clicked.connect(lambda: open_folder(self, platform_paths.get_logs_dir))
-        buttons = [data_btn, logs_btn]
+        notices_btn = QPushButton("오픈소스 라이선스")
+        notices_btn.clicked.connect(lambda: NoticesDialog(self).exec())
+        buttons = [data_btn, logs_btn, notices_btn]
         if self.support.manual_url:
             manual_btn = QPushButton("사용 안내 열기")
             manual_btn.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(self.support.manual_url)))
@@ -68,3 +78,27 @@ class AboutDialog(QDialog):
         lay.addLayout(form)
         lay.addWidget(notice)
         lay.addLayout(button_row(*buttons, close))
+
+
+def load_notices(path: Path | None = None) -> str:
+    try:
+        return (path or get_third_party_notices_path()).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return "오픈소스 라이선스 고지문 파일을 찾을 수 없습니다. 판매자에게 문의해주세요."
+
+
+class NoticesDialog(QDialog):
+    """오픈소스 라이선스 고지(K6, PRD 15장 7번). 읽기 전용."""
+
+    def __init__(self, parent: QWidget | None = None, *, path: Path | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("오픈소스 라이선스")
+        self.resize(720, 560)
+        self.text = QPlainTextEdit(load_notices(path))
+        self.text.setReadOnly(True)
+        self.text.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
+        close = theme.set_variant(QPushButton("닫기"), "primary")
+        close.clicked.connect(self.accept)
+        lay = QVBoxLayout(self)
+        lay.addWidget(self.text, 1)
+        lay.addLayout(button_row(close))

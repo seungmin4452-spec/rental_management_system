@@ -1,5 +1,5 @@
 ﻿; RentalDesk — Inno Setup 6 설치 스크립트 (Windows 11 x64). Windows에서만 빌드한다.
-;   iscc /DAppVersion=0.1.0 /DSourceDir=..\..\dist\RentalDesk /DOutputDir=..\..\dist packaging\windows\rentdesk.iss
+;   iscc /DAppVersion=1.0.0 /DSourceDir=..\..\dist\RentalDesk /DOutputDir=..\..\dist packaging\windows\rentdesk.iss
 ; 사용자 데이터(%LOCALAPPDATA%\RentalDesk)는 설치 폴더와 분리되어 있으며 제거 시 삭제하지 않는다.
 
 #ifndef AppVersion

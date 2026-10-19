@@ -33,6 +33,10 @@ if ($LASTEXITCODE -ne 0) { throw "PyInstaller 실패" }
 & (Join-Path $PSScriptRoot "smoke_windows.ps1") -Exe "dist\RentalDesk\RentalDesk.exe"
 
 $Iscc = if ($env:ISCC) { $env:ISCC } else { "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+if (-not $env:ISCC -and -not (Test-Path $Iscc)) {
+    # winget install JRSoftware.InnoSetup --scope user 로 설치한 경우
+    $Iscc = "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+}
 if (-not (Test-Path $Iscc)) { throw "Inno Setup 6(ISCC.exe)을 찾을 수 없습니다: $Iscc" }
 & $Iscc "/DAppVersion=$Version" "/DSourceDir=$(Resolve-Path dist\RentalDesk)" "/DOutputDir=$(Resolve-Path dist)" packaging\windows\rentdesk.iss
 if ($LASTEXITCODE -ne 0) { throw "Inno Setup 실패" }
