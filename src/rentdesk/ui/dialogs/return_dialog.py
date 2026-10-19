@@ -1,8 +1,9 @@
 """반납 처리 (S-06, W-03). `OUT` 장비만 나열하고 일부만 선택해 반납할 수 있다.
 
-품목별 실제 반납 시각·반납 상태·파손비·메모를 입력하고, 예측 연체료와 계산 근거를 보여준다.
-저장은 서비스가 하나의 트랜잭션으로 처리한다(상태 변경 + 연체/파손 청구 + 정비 블록).
-세트가 담긴 예약은 구성품 체크리스트를 다시 확인하고 결과를 저장한다(R4).
+품목별 실제 반납 시각·반납 상태·추가 비용(사유·내용)·메모를 입력하고, 예측 연체료와 계산 근거를
+보여준다. 저장은 서비스가 하나의 트랜잭션으로 처리한다(상태 변경 + 연체/추가 비용 청구 + 정비 블록).
+세트가 담긴 예약은 구성품 체크리스트를 다시 확인하고 결과를 저장한다(R4). 빠진 구성품은
+추가 비용 사유 '구성품 누락'으로 바로 청구할 수 있다(R5).
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QGridLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -25,6 +27,13 @@ from PySide6.QtWidgets import (
 from rentdesk.context import AppContext
 from rentdesk.domain.display import format_dt, format_won
 from rentdesk.domain.errors import DomainError
+from rentdesk.domain.extra_charges import (
+    EXTRA_CHARGE_LABEL,
+    EXTRA_CHARGE_REASON_LABELS,
+    MEMO_MAX,
+    ExtraChargeReason,
+    missing_part_memo,
+)
 from rentdesk.domain.models import ReturnCondition
 from rentdesk.services.availability import describe_conflict
 from rentdesk.services.returns import ReturnItemInput, ReturnResult
@@ -42,10 +51,26 @@ class _Row:
     check: QCheckBox
     returned_at: SeoulDateTimeEdit
     condition: QComboBox
-    damage: WonSpinBox
+    damage: WonSpinBox  # 추가 비용 금액(코드 이름은 예전 파손비 그대로)
+    reason: QComboBox
+    extra_memo: QLineEdit
     note: QLineEdit
     late: QLabel
+    order_kit_id: int | None = None
     late_fee_won: int = 0
+
+
+def _extra_cell(row: _Row) -> QWidget:
+    """추가 비용 칸: [금액][사유] + 내용 한 줄. 금액이 0이면 사유·내용은 잠근다."""
+    cell = QWidget()
+    lay = QVBoxLayout(cell)
+    lay.setContentsMargins(0, 0, 0, 0)
+    top = QHBoxLayout()
+    top.addWidget(row.damage)
+    top.addWidget(row.reason)
+    lay.addLayout(top)
+    lay.addWidget(row.extra_memo)
+    return cell
 
 
 class ReturnDialog(QDialog):
@@ -56,7 +81,7 @@ class ReturnDialog(QDialog):
         self.result: ReturnResult | None = None
         order = ctx.reservations.get_order(order_id)
         self.setWindowTitle(f"반납 처리 {order.order_no}")
-        self.setMinimumSize(900, 480)
+        self.setMinimumSize(1000, 480)
 
         info = QLabel(
             f"<b>{order.order_no}</b> · 고객 {ctx.reservations.customer_name(order)} · "
@@ -73,7 +98,8 @@ class ReturnDialog(QDialog):
         grid_box = QWidget()
         grid = QGridLayout(grid_box)
         for col, head in enumerate(
-            ["반납", "장비번호", "실제 반납 시각", "반납 상태", "파손비", "반납 메모", "연체료(예상)"]
+            ["반납", "장비번호", "실제 반납 시각", "반납 상태", f"{EXTRA_CHARGE_LABEL}(사유·내용)",
+             "반납 메모", "연체료(예상)"]
         ):
             grid.addWidget(QLabel(f"<b>{head}</b>"), 0, col)
         now = now_seoul_minute(ctx.now())
@@ -82,19 +108,27 @@ class ReturnDialog(QDialog):
             row = _Row(
                 item_id=item.id, asset_code=item.asset_code, check=QCheckBox(),
                 returned_at=SeoulDateTimeEdit(now), condition=QComboBox(), damage=WonSpinBox(),
-                note=QLineEdit(), late=QLabel(),
+                reason=QComboBox(), extra_memo=QLineEdit(), note=QLineEdit(), late=QLabel(),
+                order_kit_id=item.order_kit_id,
             )
             for cond, label in CONDITION_LABELS.items():
                 row.condition.addItem(label, cond)
+            for reason, label in EXTRA_CHARGE_REASON_LABELS.items():
+                row.reason.addItem(label, reason)
+            row.extra_memo.setMaxLength(MEMO_MAX)
+            row.extra_memo.setPlaceholderText("추가 비용 내용(기타는 필수)")
+            row.damage.valueChanged.connect(lambda _=None, rr=row: self._sync_extra(rr))
+            row.reason.currentIndexChanged.connect(lambda _=None, rr=row: self._fill_missing_memo(rr))
             row.note.setMaxLength(1000)
             row.late.setWordWrap(True)
             row.returned_at.dateTimeChanged.connect(lambda _=None, rr=row: self._preview(rr))
             row.check.toggled.connect(self._update_total)
             row.damage.valueChanged.connect(self._update_total)
             for col, w in enumerate([row.check, QLabel(item.asset_code), row.returned_at,
-                                     row.condition, row.damage, row.note, row.late]):
+                                     row.condition, _extra_cell(row), row.note, row.late]):
                 grid.addWidget(w, r, col)
             self.rows.append(row)
+            self._sync_extra(row)
             self._preview(row)
         grid.setRowStretch(len(self.rows) + 1, 1)  # 행을 위쪽에 모아 표시
         grid.setColumnStretch(5, 1)
@@ -139,6 +173,24 @@ class ReturnDialog(QDialog):
         theme.set_tone(row.late, "danger" if p.late.late_fee_won else None)
         self._update_total()
 
+    @staticmethod
+    def _sync_extra(row: _Row) -> None:
+        on = row.damage.value() > 0
+        row.reason.setEnabled(on)
+        row.extra_memo.setEnabled(on)
+
+    def _fill_missing_memo(self, row: _Row) -> None:
+        """사유를 '구성품 누락'으로 고르면 비어 있는 내용 칸에 그 세트의 빠진 구성품을 채운다."""
+        if row.reason.currentData() != ExtraChargeReason.MISSING_PART or row.extra_memo.text().strip():
+            return
+        kit = next((k for k in self.kit_checks.kits if k.id == row.order_kit_id), None)
+        if kit is None:
+            return
+        missing = dict(self.kit_checks.missing()).get(kit.name)
+        memo = missing_part_memo([(kit.name, missing or [])])
+        if memo:
+            row.extra_memo.setText(memo)
+
     def selected(self) -> list[_Row]:
         return [r for r in self.rows if r.check.isChecked()]
 
@@ -149,7 +201,7 @@ class ReturnDialog(QDialog):
         late = sum(r.late_fee_won for r in sel)
         damage = sum(r.damage.value() for r in sel)
         self.total.setText(
-            f"선택 {len(sel)}개 · 예상 연체료 {format_won(late)} · 파손비 {format_won(damage)}"
+            f"선택 {len(sel)}개 · 예상 연체료 {format_won(late)} · {EXTRA_CHARGE_LABEL} {format_won(damage)}"
         )
         self.submit_btn.setEnabled(bool(sel))
 
@@ -162,7 +214,8 @@ class ReturnDialog(QDialog):
             ReturnItemInput(
                 item_id=r.item_id, returned_at=r.returned_at.value(),
                 condition=r.condition.currentData(), damage_fee_won=r.damage.value(),
-                note=r.note.text(),
+                note=r.note.text(), extra_charge_reason=r.reason.currentData(),
+                extra_charge_memo=r.extra_memo.text(),
             )
             for r in sel
         ]
@@ -172,17 +225,18 @@ class ReturnDialog(QDialog):
             if r.late_fee_won:
                 extra.append(f"연체료 {format_won(r.late_fee_won)}")
             if r.damage.value():
-                extra.append(f"파손비 {format_won(r.damage.value())}")
+                extra.append(f"{EXTRA_CHARGE_LABEL}({r.reason.currentText()}) "
+                             f"{format_won(r.damage.value())}")
             if r.condition.currentData() == ReturnCondition.MAINTENANCE_REQUIRED:
                 extra.append("정비 블록 생성")
             lines.append(f"- {r.asset_code} {format_dt(r.returned_at.value())}"
                          + (f" ({', '.join(extra)})" if extra else ""))
-        text = ("아래 장비를 반납 처리합니다. 반납은 되돌릴 수 없으며 연체료·파손비가 청구됩니다.\n\n"
+        text = ("아래 장비를 반납 처리합니다. 반납은 되돌릴 수 없으며 연체료·추가 비용이 청구됩니다.\n\n"
                 + "\n".join(lines))
         missing = self.kit_checks.missing_text()
         if missing:
             text += ("\n\n확인하지 않은 구성품:\n" + missing
-                     + "\n빠진 구성품 비용은 장비 행의 파손비나 정산 화면의 조정으로 청구할 수 있습니다.")
+                     + "\n빠진 구성품 비용은 장비 행의 추가 비용에서 사유 '구성품 누락'으로 청구할 수 있습니다.")
         if not feedback.confirm(self, text, "반납 확인"):
             return False
         self.submit_btn.setEnabled(False)

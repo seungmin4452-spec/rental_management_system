@@ -198,7 +198,7 @@
 ### S-06 반납 처리
 
 - 해당 예약에서 `OUT`인 실물 장비만 나열. 일부 품목만 선택해 반납 가능.
-- 품목별 실제 반납 시각(기본 현재 시각), 반납 상태(`GOOD`/`MAINTENANCE_REQUIRED`), 파손비(수동), 반납 메모.
+- 품목별 실제 반납 시각(기본 현재 시각), 반납 상태(`GOOD`/`MAINTENANCE_REQUIRED`), 추가 비용(수동 금액 + 사유: 파손·분실·세척·구성품 누락·기타, 내용 메모 — "기타"는 내용 필수), 반납 메모.
 - 연체료 계산 근거 표시. 저장 후 `RETURNED`와 청구 원장을 하나의 DB 트랜잭션에서 반영.
 - 정비 필요 시 정비 블록 자동 생성 및 미래 예약 영향 안내.
 - 이미 반납된 품목을 다시 반납하면 오류 메시지(중복 과금 금지).
@@ -335,7 +335,7 @@ late_fee_won = round_half_up((D * full_days + partial) * late_multiplier)
 - `RENTAL`: 출고 시 장비별 기본 대여료 **양수**.
 - `DISCOUNT`: 출고 시 예약 할인 **음수**(주문 할인 주문당 최대 1건 + 세트 할인 세트마다 최대 1건, `charge_lines.order_kit_id`로 구분).
 - `LATE`: 반납 시 장비별 연체료 **양수**.
-- `DAMAGE`: 반납 시 운영자가 입력한 파손비 **양수**.
+- `DAMAGE`: 반납 시 운영자가 입력한 추가 비용(화면 표기, 예전 "파손비") **양수**. 사유·내용은 `description`에 "CAM-1 추가 비용(세척): 내용" 형식으로 저장(새 열 없음). 사유가 "구성품 누락"이고 내용이 비어 있으면 그 세트의 빠진 구성품으로 채운다.
 - `ADJUSTMENT`: P0에서 사용하지 않으며 추후 수정 이력 보존을 위한 확장 타입.
 
 #### 금전 원장 `money_entries`
@@ -414,7 +414,7 @@ deposit_held = sum(DEPOSIT_IN) - sum(DEPOSIT_OUT) - net_deposit_applied
 - `AvailabilityService`: 특정 시간의 예약 충돌·정비 블록·연체 미반납 확인.
 - `ReservationService`: 예약 임시저장/확정/수정/취소, 상태 전이 검증.
 - `CheckoutService`: 원자적 출고 및 최초 대여료 청구 생성.
-- `ReturnService`: 부분 반납, 연체료/파손비 확정, 정비 블록.
+- `ReturnService`: 부분 반납, 연체료/추가 비용 확정, 정비 블록.
 - `SettlementService`: 청구 합계·미수·보증금 수령/환급/충당, 금전 원장.
 - `BackupService`: SQLite 백업 API를 사용하는 안전 백업/복구.
 - `ReportService`: 엑셀 내보내기 및 데이터 범위 검증.

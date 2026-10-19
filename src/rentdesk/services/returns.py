@@ -1,14 +1,15 @@
-"""ReturnService: 장비 단위 부분 반납, 연체료/파손비 확정, 정비 블록 (PRD S-06, 6.2, 7.3).
+"""ReturnService: 장비 단위 부분 반납, 연체료/추가 비용 확정, 정비 블록 (PRD S-06, 6.2, 7.3).
 
 - `IN_RENTAL` 주문의 `OUT` 품목만 반납할 수 있다. 이미 반납된 품목은 거부(이중 과금 금지, T-12).
 - 반납 시각은 출고 시각 이후이며 미래일 수 없다.
 - 연체료는 품목 스냅샷(일 대여료·유예·배수)으로 반납 순간 한 번만 `LATE` 청구한다.
-- 파손비는 운영자가 입력한 금액으로 `DAMAGE` 청구한다.
+- 추가 비용(예전 파손비, R5)은 운영자가 입력한 금액으로 `DAMAGE` 청구한다. 사유(파손·분실·세척·
+  구성품 누락·기타)와 메모는 청구 줄 설명에 남긴다(`domain.extra_charges`).
 - `MAINTENANCE_REQUIRED`면 같은 트랜잭션에서 정비 블록(종료 미정)을 만들고 영향 예약을 경고한다.
 - 반납 시각+버퍼와 겹치는 후속 확정 예약도 자동 취소하지 않고 경고한다.
 - 마지막 품목이 반납되면 주문은 `COMPLETED`(정산 완료와는 별개).
 - 세트(R4): 반납할 때 다시 확인한 구성품 체크 결과를 저장한다(마지막 확인 결과로 덮어씀).
-  빠진 구성품 비용 청구는 R5(추가 비용)에서 다룬다.
+  사유가 '구성품 누락'이고 메모가 없으면 그 장비가 든 세트의 빠진 구성품을 메모로 채운다.
 """
 
 from __future__ import annotations
@@ -28,7 +29,14 @@ from rentdesk.domain.models import (
     RentalOrder,
     ReturnCondition,
 )
-from rentdesk.domain.kits import validate_checks
+from rentdesk.domain.extra_charges import (
+    ExtraChargeReason,
+    clean_memo,
+    describe,
+    missing_part_memo,
+    parse_reason,
+)
+from rentdesk.domain.kits import missing_items, validate_checks
 from rentdesk.domain.pricing import LateFee, late_fee, late_fee_basis, validate_won
 from rentdesk.domain.timeutil import ensure_aware, format_seoul, to_utc
 from rentdesk.persistence import repositories as repo
@@ -42,8 +50,10 @@ class ReturnItemInput:
     item_id: int
     returned_at: datetime | None = None  # None = 현재 시각
     condition: ReturnCondition = ReturnCondition.GOOD
-    damage_fee_won: int = 0
+    damage_fee_won: int = 0  # 화면 표기는 "추가 비용"(R5)
     note: str | None = None
+    extra_charge_reason: ExtraChargeReason = ExtraChargeReason.DAMAGE
+    extra_charge_memo: str | None = None
     maintenance_reason: str | None = None  # 정비 필요 시 블록 사유(미입력 시 기본 문구)
 
 
@@ -67,6 +77,7 @@ class ReturnedLine:
     late_fee_won: int
     damage_fee_won: int
     basis: str
+    extra_charge_reason: ExtraChargeReason | None = None  # 추가 비용이 없으면 None
 
 
 @dataclass(frozen=True)
@@ -172,11 +183,15 @@ class ReturnService:
                 condition = ReturnCondition(data.condition)
             except ValueError:
                 raise ValidationError("condition", "반납 상태가 올바르지 않습니다.") from None
+            extra = validate_won("damage_fee_won", data.damage_fee_won, label="추가 비용")
+            reason = parse_reason(data.extra_charge_reason)
             cleaned.append((
                 data,
                 _resolve_time(data.returned_at, now),
                 condition,
-                validate_won("damage_fee_won", data.damage_fee_won, label="파손비"),
+                extra,
+                reason,
+                clean_memo(reason, data.extra_charge_memo, extra),
                 clean_optional(data.note, "note", "반납 메모", 1000),
                 clean_optional(data.maintenance_reason, "maintenance_reason", "정비 사유", 500),
             ))
@@ -189,14 +204,15 @@ class ReturnService:
             if order.status != OrderStatus.IN_RENTAL:
                 raise InvalidStateError(self._not_returnable_message(order.status))
             kits = {k.id: k for k in order.kits}
+            kit_missing: dict[int, list[str]] = {}
             for order_kit_id, values in kit_checks.items():
                 if order_kit_id not in kits:
                     raise ValidationError("kit_checks", "이 예약에 담긴 세트가 아닙니다.")
-                repo.set_order_kit_checks(
-                    self._conn, order_kit_id, returned=validate_checks(kits[order_kit_id].checklist, values)
-                )
+                checks = validate_checks(kits[order_kit_id].checklist, values)
+                repo.set_order_kit_checks(self._conn, order_kit_id, returned=checks)
+                kit_missing[order_kit_id] = missing_items(kits[order_kit_id].checklist, checks)
 
-            for data, returned_at, condition, damage, note, reason in cleaned:
+            for data, returned_at, condition, damage, extra_reason, memo, note, reason in cleaned:
                 item = self._find_item(order, data.item_id)
                 if item.status == ItemStatus.RETURNED:
                     raise InvalidStateError(
@@ -217,10 +233,15 @@ class ReturnService:
                         description=preview.basis[:500], now=now,
                     )
                 if damage > 0:
+                    if (memo is None and extra_reason == ExtraChargeReason.MISSING_PART
+                            and item.order_kit_id in kit_missing):
+                        memo = missing_part_memo(
+                            [(kits[item.order_kit_id].name, kit_missing[item.order_kit_id])]
+                        )
                     repo.insert_charge(
                         self._conn, order_id=order.id, rental_item_id=item.id,
                         kind=ChargeKind.DAMAGE, amount_won=damage,
-                        description=f"{item.asset_code} 파손비", now=now,
+                        description=describe(item.asset_code, extra_reason, memo), now=now,
                     )
 
                 # 반납 시각 + 점검 버퍼 안에 시작하는 후속 확정 예약 경고
@@ -246,7 +267,7 @@ class ReturnService:
                 lines.append(ReturnedLine(
                     item_id=item.id, asset_code=item.asset_code,
                     late_fee_won=preview.late.late_fee_won, damage_fee_won=damage,
-                    basis=preview.basis,
+                    basis=preview.basis, extra_charge_reason=extra_reason if damage else None,
                 ))
 
             remaining = [

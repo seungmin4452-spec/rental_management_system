@@ -96,7 +96,7 @@ def test_settlement_report(svc, data):
     assert len(t.rows) == 1  # 출고 전 예약(o2)은 제외
     row = t.rows[0]
     assert row[0] == data["o1"].order_no
-    assert row[4:10] == (40_000, 0, 0, 40_000, 130_000, "미정산")
+    assert row[4:11] == (40_000, 0, 0, 0, 40_000, 130_000, "미정산")
     assert ("미수금 합계", 40_000) in t.totals
 
     svc.settlements.record(data["o1"].id, MoneyInput(kind=MoneyKind.DEPOSIT_APPLIED, amount_won=40_000))

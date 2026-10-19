@@ -152,7 +152,8 @@ def load_sample_data(conn: sqlite3.Connection, now: datetime) -> None:
     go_out(o6, _at_hour(real_now, -5, 13, 5), deposit=30_000)
     give_back(o6, ["LEN-0003"], _at_hour(real_now, -4, 12, 30),
               condition=ReturnCondition.MAINTENANCE_REQUIRED, damage_fee_won=20_000,
-              note="렌즈 앞면 긁힘", maintenance_reason="렌즈 앞면 긁힘 점검")
+              extra_charge_memo="앞면 코팅 수리", note="렌즈 앞면 긁힘",
+              maintenance_reason="렌즈 앞면 긁힘 점검")
 
     # 7) 오늘 출고 예정(확정) — 출고 예정 시각은 오늘 23:00(서울)
     clock.now = real_now

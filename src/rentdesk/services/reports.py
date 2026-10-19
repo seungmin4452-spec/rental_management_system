@@ -253,18 +253,21 @@ class ReportService:
             filters=(
                 f"기간: {start} ~ {end} (출고 이후 예약 중 예약 기간이 겹치는 예약)",
                 "범위: " + ("미정산만" if unsettled_only else "전체"),
+                "추가 비용: 반납 때 청구한 파손·분실·세척·구성품 누락 등(청구 합계에 포함)",
             ),
             columns=(
                 Column("예약번호", width=17), Column("고객", width=18),
                 Column("상태", width=10), Column("출고 시각", ColumnType.DATETIME, 17),
-                Column("청구 합계", ColumnType.WON), Column("받은 대여료(환급 제외)", ColumnType.WON),
+                Column("청구 합계", ColumnType.WON), Column("추가 비용", ColumnType.WON),
+                Column("받은 대여료(환급 제외)", ColumnType.WON),
                 Column("보증금에서 차감", ColumnType.WON), Column("미수금", ColumnType.WON),
                 Column("보증금 보유액", ColumnType.WON), Column("정산", width=8),
             ),
             rows=tuple(
                 (
                     r.order.order_no, r.customer_name, ORDER_STATUS_LABELS[r.order.status],
-                    r.order.actual_checkout_at, s.charge_total_won, s.net_rental_receipts_won,
+                    r.order.actual_checkout_at, s.charge_total_won, s.damage_charges_won,
+                    s.net_rental_receipts_won,
                     s.net_deposit_applied_won, s.amount_due_won, s.deposit_held_won,
                     "완료" if s.is_settled else "미정산",
                 )
@@ -272,6 +275,7 @@ class ReportService:
             ),
             totals=(
                 ("청구 합계", sum(s.charge_total_won for _, s in data)),
+                ("추가 비용 합계", sum(s.damage_charges_won for _, s in data)),
                 ("받은 대여료(환급 제외) 합계", sum(s.net_rental_receipts_won for _, s in data)),
                 ("미수금 합계", sum(s.amount_due_won for _, s in data)),
                 ("보증금 보유액 합계", sum(s.deposit_held_won for _, s in data)),

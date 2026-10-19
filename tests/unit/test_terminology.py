@@ -8,7 +8,9 @@ from pathlib import Path
 
 import rentdesk
 
-OLD_TERMS = ("은퇴", "순수금", "대금충당", "역거래", "전환 버퍼", "점검 버퍼", "재활성화", "연체 배수", "연체료 배수", "유예 ")
+OLD_TERMS = ("은퇴", "순수금", "대금충당", "역거래", "전환 버퍼", "점검 버퍼", "재활성화", "연체 배수", "연체료 배수", "유예 ", "파손비")
+# 예전 청구 줄("CAM-1 파손비")을 읽기 위한 문자열만 허용 (R5)
+ALLOWED = {("domain/extra_charges.py", "파손비")}
 
 
 def _user_facing_strings(path: Path):
@@ -32,6 +34,6 @@ def test_no_old_terms_in_user_facing_text():
         for path in root.rglob("*.py")
         for line, text in _user_facing_strings(path)
         for term in OLD_TERMS
-        if term in text
+        if term in text and (path.relative_to(root).as_posix(), term) not in ALLOWED
     ]
     assert not found, "옛 용어가 남아 있습니다:\n" + "\n".join(found)
