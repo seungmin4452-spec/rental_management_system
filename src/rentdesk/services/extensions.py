@@ -116,7 +116,7 @@ class ExtensionService:
             raise InvalidStateError("연장할 대여 중 장비가 없습니다.")
         quote = quote_extension(
             [i.daily_rate_snapshot_won for i in out_items], order.start_at, order.due_at, new_due,
-            discount_won,
+            discount_won, rules=[i.rate_rule_snapshot for i in out_items],
         )
         conflicts = find_conflicts(
             self._conn, [i.asset_id for i in out_items], order.start_at, new_due,

@@ -7,9 +7,11 @@
 from __future__ import annotations
 
 from rentdesk.domain.models import CategoryPolicy, RentalPolicy
+from rentdesk.domain.rates import RateRule, rate_rule_summary
 
 __all__ = [
-    "CategoryPolicy", "buffer_basis", "buffer_summary", "effective_policy", "format_minutes", "policy_basis",
+    "CategoryPolicy", "buffer_basis", "buffer_summary", "effective_policy", "effective_rate_rule",
+    "format_minutes", "policy_basis",
 ]
 
 POLICY_FIELD_LABELS = {
@@ -34,6 +36,11 @@ def effective_policy(shop: RentalPolicy, category: CategoryPolicy | None) -> Ren
             else category.turnaround_buffer_minutes
         ),
     )
+
+
+def effective_rate_rule(shop: RateRule, category: RateRule | None) -> RateRule:
+    """요금 규칙(R3)은 항목별이 아니라 통째로 덮어쓴다: 카테고리 규칙이 있으면 그것, 없으면 가게 규칙."""
+    return shop if category is None else category
 
 
 def format_minutes(minutes: int) -> str:
@@ -67,12 +74,20 @@ def buffer_summary(buffer_minutes: list[int] | tuple[int, ...]) -> str:
     return f"장비별 {format_minutes(values[0])}~{format_minutes(values[-1])}"
 
 
-def policy_basis(category_name: str, category: CategoryPolicy | None, shop: RentalPolicy) -> str:
-    """예약 마법사 근거 문구: 준비 시간 + 카테고리가 바꾼 연체 기준.
+def policy_basis(
+    category_name: str,
+    category: CategoryPolicy | None,
+    shop: RentalPolicy,
+    rate_rule: RateRule | None = None,
+) -> str:
+    """예약 마법사 근거 문구: 준비 시간 + 카테고리가 바꾼 연체 기준·요금 규칙.
 
-    예: "텐트: 준비 12시간(카테고리 설정)", "공구: 준비 1시간(가게 기본값) · 연체 1.5배(카테고리 설정)".
+    예: "텐트: 준비 12시간(카테고리 설정)", "공구: 준비 1시간(가게 기본값) · 연체 1.5배(카테고리 설정)",
+    "캠핑: … · 요금 날짜 기준(1박2일 = 1일) · 주말(…)(카테고리 설정)".
     """
     text = buffer_basis(category_name, category, shop)
+    if rate_rule is not None:
+        text += f" · 요금 {rate_rule_summary(rate_rule)}(카테고리 설정)"
     if category is None:
         return text
     if category.grace_minutes is not None:

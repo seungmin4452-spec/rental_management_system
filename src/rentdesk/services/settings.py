@@ -1,10 +1,11 @@
-"""운영 설정(유예시간·연체 배수·전환 버퍼)과 출력물용 사업자 정보 조회/변경 (PRD S-09).
+"""운영 설정(유예시간·연체 배수·반납 후 준비 시간)·요금 규칙과 출력물용 사업자 정보 조회/변경 (PRD S-09).
 
 운영 설정 변경값은 이후 확정되는 예약에만 스냅샷으로 적용되며 기존 약정에 소급되지 않는다.
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -12,8 +13,9 @@ from decimal import Decimal
 
 from rentdesk.domain.errors import ValidationError
 from rentdesk.domain.models import Asset, RentalPolicy
-from rentdesk.domain.policy import effective_policy
+from rentdesk.domain.policy import effective_policy, effective_rate_rule
 from rentdesk.domain.pricing import parse_multiplier
+from rentdesk.domain.rates import RateRule, rate_rule_from_data, rate_rule_to_json, validate_rate_rule
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
 from rentdesk.services.common import Clock, clean_optional, current_time, default_clock
@@ -44,6 +46,22 @@ def policies_for_assets(conn: sqlite3.Connection, assets: Iterable[Asset]) -> di
     categories = repo.categories_by_id(conn, (a.category_id for a in assets))
     return {
         a.id: effective_policy(shop, categories[a.category_id].policy if a.category_id in categories else None)
+        for a in assets
+    }
+
+
+def read_rate_rule(conn: sqlite3.Connection) -> RateRule:
+    """가게 기본 요금 규칙(M4.6 R3)."""
+    return rate_rule_from_data(repo.get_setting(conn, "rate_rule"))
+
+
+def rate_rules_for_assets(conn: sqlite3.Connection, assets: Iterable[Asset]) -> dict[int, RateRule]:
+    """장비별 실제 적용 요금 규칙(가게 기본값 → 카테고리 규칙)."""
+    assets = list(assets)
+    shop = read_rate_rule(conn)
+    categories = repo.categories_by_id(conn, (a.category_id for a in assets))
+    return {
+        a.id: effective_rate_rule(shop, categories[a.category_id].rate_rule if a.category_id in categories else None)
         for a in assets
     }
 
@@ -98,6 +116,21 @@ class SettingsService:
                 description=f"grace={grace}, multiplier={multiplier}, buffer={buffer}", now=now,
             )
         return self.get_policy()
+
+    def get_rate_rule(self) -> RateRule:
+        return read_rate_rule(self._conn)
+
+    def update_rate_rule(self, rule: RateRule) -> RateRule:
+        """가게 기본 요금 규칙 변경. 이후 확정되는 예약에만 적용(기존 예약은 품목 스냅샷 유지)."""
+        clean = validate_rate_rule(rule)
+        now = current_time(self._clock)
+        with transaction(self._conn):
+            repo.set_setting(self._conn, "rate_rule", json.loads(rate_rule_to_json(clean)))
+            repo.insert_audit(
+                self._conn, entity_type="settings", entity_id=None, action="UPDATE_RATE_RULE",
+                description=rate_rule_to_json(clean)[:500], now=now,
+            )
+        return self.get_rate_rule()
 
     def get_business_info(self) -> BusinessInfo:
         return read_business_info(self._conn)

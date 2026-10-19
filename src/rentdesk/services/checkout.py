@@ -22,7 +22,7 @@ from rentdesk.domain.models import (
     PaymentMethod,
     RentalOrder,
 )
-from rentdesk.domain.pricing import OrderQuote, rental_charge_won, rental_days, validate_won
+from rentdesk.domain.pricing import OrderQuote, period_fee, validate_won
 from rentdesk.domain.timeutil import ensure_aware, format_seoul, to_utc
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
@@ -123,15 +123,14 @@ class CheckoutService:
             items = [i for i in order.items if i.status == ItemStatus.RESERVED]
             # 할인 한도 재검증(할인 ≤ 기본 대여료)
             quote_items(items, order.start_at, order.due_at, order.discount_won)
-            days = rental_days(order.start_at, order.due_at)
             for item in items:
+                fee = period_fee(
+                    item.daily_rate_snapshot_won, order.start_at, order.due_at, item.rate_rule_snapshot
+                )
                 repo.insert_charge(
                     self._conn, order_id=order.id, rental_item_id=item.id,
-                    kind=ChargeKind.RENTAL,
-                    amount_won=rental_charge_won(
-                        item.daily_rate_snapshot_won, order.start_at, order.due_at
-                    ),
-                    description=f"{item.asset_code} {item.daily_rate_snapshot_won:,}원 × {days}일",
+                    kind=ChargeKind.RENTAL, amount_won=fee.amount_won,
+                    description=f"{item.asset_code} {fee.basis}"[:500],
                     now=now,
                 )
             if order.discount_won > 0:

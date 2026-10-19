@@ -26,7 +26,7 @@ from rentdesk.domain.models import (
     RentalOrder,
     ReturnCondition,
 )
-from rentdesk.domain.pricing import LateFee, late_fee, validate_won
+from rentdesk.domain.pricing import LateFee, late_fee, late_fee_basis, validate_won
 from rentdesk.domain.timeutil import ensure_aware, format_seoul, to_utc
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
@@ -81,18 +81,17 @@ class ReturnResult:
 def _late_preview(order: RentalOrder, item: RentalItem, returned_at: datetime) -> LateFeePreview:
     fee = late_fee(
         item.daily_rate_snapshot_won, order.due_at, returned_at,
-        item.grace_minutes_snapshot, item.late_multiplier_snapshot,
+        item.grace_minutes_snapshot, item.late_multiplier_snapshot, item.rate_rule_snapshot,
     )
     head = (
         f"약정 반납 {format_seoul(order.due_at)}, 실제 반납 {format_seoul(returned_at)}, "
         f"연체료 없이 기다려 주는 시간 {item.grace_minutes_snapshot}분"
     )
-    if fee.late_days == 0:
+    if not fee.is_late:
         basis = f"{head} → 연체 없음"
     else:
-        basis = (
-            f"{head} → 연체 {fee.late_days}일 × 일 대여료 {item.daily_rate_snapshot_won:,}원"
-            f" × {item.late_multiplier_snapshot}배 = {fee.late_fee_won:,}원"
+        basis = f"{head} → " + late_fee_basis(
+            item.daily_rate_snapshot_won, item.late_multiplier_snapshot, item.rate_rule_snapshot, fee
         )
     return LateFeePreview(
         item_id=item.id, asset_code=item.asset_code, due_at=order.due_at,

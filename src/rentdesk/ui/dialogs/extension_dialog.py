@@ -97,6 +97,9 @@ class ExtensionDialog(QDialog):
         text += f" = <b>{format_won(q.amount_won)}</b>"
         if q.added_days == 0:
             text += "<br>같은 요금 일수 안이라 추가 요금 없이 반납 예정만 바뀝니다."
+        elif q.waived_by_long_rate:
+            text += ("<br>주·월·주말 단가가 적용되어 추가 요금이 없습니다"
+                     "(이미 받은 대여료는 돌려주지 않습니다).")
         if p.overdue_now:
             text += "<br>지금 연체 중입니다. 연장하면 원래 반납 예정 이후 시간은 연체료 대신 연장 요금으로 계산됩니다."
         self.preview.setText(text)

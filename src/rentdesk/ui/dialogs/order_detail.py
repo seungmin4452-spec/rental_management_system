@@ -126,7 +126,7 @@ class OrderDetailDialog(QDialog):
                 f" · 보증금 보유 <b>{format_won(s.deposit_held_won)}</b> · <b>{state}</b>"
             )
         elif q is not None:
-            text = (f"예상 대여료 {format_won(q.expected_total_rental_fee_won)} ({q.rental_days}일,"
+            text = (f"예상 대여료 {format_won(q.expected_total_rental_fee_won)} ({q.days_label},"
                     f" 할인 {format_won(q.discount_won)}) · 예상 보증금 {format_won(q.expected_deposit_won)}")
             if order.status == OrderStatus.CONFIRMED:
                 s = self.ctx.settlements.summary(self.order_id)

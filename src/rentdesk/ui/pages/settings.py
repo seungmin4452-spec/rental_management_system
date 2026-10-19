@@ -1,4 +1,4 @@
-"""S-09 설정: 운영 정책, 사업자 정보, 백업/복원, 라이선스, 화면 크기, 예제 데이터 모드."""
+"""S-09 설정: 운영 정책, 요금 계산 방식(M4.6 R3), 사업자 정보, 백업/복원, 라이선스, 화면 크기, 예제 데이터 모드."""
 
 from __future__ import annotations
 
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from rentdesk.domain.display import format_dt
+from rentdesk.domain.rates import rate_rule_summary
 from rentdesk.platform import paths as platform_paths
 from rentdesk.services import auto_backup
 from rentdesk.services.auto_backup import AutoBackupSettings
@@ -37,6 +38,7 @@ from rentdesk.ui.backup_actions import (
 )
 from rentdesk.ui.dialogs.about_dialog import open_folder
 from rentdesk.ui.pages.base import Page
+from rentdesk.ui.rate_rule_editor import RateRuleEditor
 from rentdesk.ui.widgets import FormErrors, button_row
 
 FIELD_WIDTH = 220
@@ -78,6 +80,21 @@ class SettingsPage(Page):
         save_policy = theme.set_variant(QPushButton("정책 저장"), "primary")
         save_policy.clicked.connect(self.save_policy)
         pf.addRow(button_row(save_policy))
+
+        rate_box = QGroupBox("요금 계산 방식 — 가게 기본값 (이후 확정되는 예약부터 적용)")
+        rl = QVBoxLayout(rate_box)
+        rate_intro = QLabel(
+            "카테고리마다 다르게 하려면 장비 관리 > [카테고리 관리]에서 바꿉니다. "
+            "카테고리에서 따로 정하지 않으면 여기 값을 씁니다."
+        )
+        rate_intro.setWordWrap(True)
+        theme.set_tone(rate_intro, "muted")
+        self.rate_editor = RateRuleEditor()
+        save_rate = theme.set_variant(QPushButton("요금 계산 방식 저장"), "primary")
+        save_rate.clicked.connect(self.save_rate_rule)
+        rl.addWidget(rate_intro)
+        rl.addWidget(self.rate_editor)
+        rl.addLayout(button_row(save_rate))
 
         biz_box = QGroupBox("사업자 정보 (엑셀 출력물 헤더)")
         bf = QFormLayout(biz_box)
@@ -172,6 +189,7 @@ class SettingsPage(Page):
         body = QWidget()
         lay = QVBoxLayout(body)
         lay.addWidget(policy_box)
+        lay.addWidget(rate_box)
         lay.addWidget(biz_box)
         lay.addWidget(backup_box)
         if license_box is not None:
@@ -192,6 +210,8 @@ class SettingsPage(Page):
         self.grace.setValue(p.grace_minutes)
         self.multiplier.setValue(float(p.late_multiplier))
         self.buffer.setValue(p.turnaround_buffer_minutes)
+        self.rate_editor.set_rule(self.ctx.settings.get_rate_rule())
+        self.rate_editor.clear_errors()
         b = self.ctx.settings.get_business_info()
         self.biz_name.setText(b.name)
         self.biz_phone.setText(b.phone)
@@ -227,6 +247,21 @@ class SettingsPage(Page):
         if ok is None:
             return False
         feedback.info(self, "정책을 저장했습니다.")
+        self.refresh()
+        return True
+
+    def save_rate_rule(self) -> bool:
+        self.rate_editor.clear_errors()
+        rule = self.rate_editor.rule()
+        text = (f"가게 기본 요금 계산 방식을 '{rate_rule_summary(rule)}'(으)로 변경합니다.\n"
+                "이미 확정된 예약에는 소급 적용되지 않습니다.")
+        if not feedback.confirm(self, text, "요금 계산 방식 변경 확인"):
+            return False
+        saved = feedback.run(self, lambda: self.ctx.settings.update_rate_rule(rule),
+                             on_domain_error=self.rate_editor.show_error)
+        if saved is None:
+            return False
+        feedback.info(self, "요금 계산 방식을 저장했습니다.")
         self.refresh()
         return True
 

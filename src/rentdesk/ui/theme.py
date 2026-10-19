@@ -215,7 +215,7 @@ QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QDateTimeEdit, QTextE
 }
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus, QDateEdit:focus,
 QDateTimeEdit:focus, QTextEdit:focus, QPlainTextEdit:focus { border-color: $accent; }
-QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDateEdit:disabled,
+QLineEdit:disabled, QComboBox:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QDateEdit:disabled,
 QDateTimeEdit:disabled { background: $surface_alt; color: $text_muted; }
 QLineEdit#SearchBox { border-radius: 12px; padding: 9px 12px; }
 QComboBox::drop-down, QDateEdit::drop-down, QDateTimeEdit::drop-down { border: none; width: 26px; }

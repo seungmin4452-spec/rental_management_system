@@ -1,7 +1,8 @@
-"""장비 > 카테고리 관리 (MULTI_INDUSTRY_PLAN R1·R2).
+"""장비 > 카테고리 관리 (MULTI_INDUSTRY_PLAN R1·R2·R3).
 
-카테고리 추가·이름 변경·숨김과 카테고리별 운영 설정(준비 시간·연체 유예·연체 배수).
+카테고리 추가·이름 변경·숨김과 카테고리별 운영 설정(준비 시간·연체 유예·연체 배수), 요금 계산 방식.
 각 항목은 "가게 기본값 사용"이 기본이며, 가게 기본값과 다른 항목만 표에 굵게 표시한다.
+요금 계산 방식은 항목별이 아니라 통째로 "가게 기본값 사용" 또는 카테고리 규칙이다.
 검증·저장은 `AssetService`가 하고 이 화면은 입력과 표시만 한다.
 """
 
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSpinBox,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -27,8 +29,10 @@ from PySide6.QtWidgets import (
 from rentdesk.context import AppContext
 from rentdesk.domain.models import Category, RentalPolicy
 from rentdesk.domain.policy import effective_policy, format_minutes
+from rentdesk.domain.rates import rate_rule_short, rate_rule_summary
 from rentdesk.services.settings import MAX_MINUTES
 from rentdesk.ui import feedback, theme
+from rentdesk.ui.rate_rule_editor import RateRuleEditor
 from rentdesk.ui.widgets import DataTable, FormErrors, button_row
 
 FIELD_WIDTH = 120
@@ -70,17 +74,18 @@ class _PolicyField:
 
 
 class CategoryDialog(QDialog):
-    HEADERS = ["카테고리", "준비 시간", "기다려 주는 시간", "연체 1일당", "상태"]
+    HEADERS = ["카테고리", "준비 시간", "기다려 주는 시간", "연체 1일당", "요금 계산", "상태"]
 
     def __init__(self, ctx: AppContext, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.ctx = ctx
         self.changed = False
         self.setWindowTitle("카테고리 관리")
-        self.setMinimumSize(900, 520)
+        self.setMinimumSize(1000, 600)
 
         intro = QLabel(
             "카테고리마다 반납 후 준비 시간·연체 기준을 다르게 둘 수 있습니다(예: 텐트는 세척·건조 12시간). "
+            "요금 계산 방식(1박2일·주말·주·월 요금)도 카테고리마다 정할 수 있습니다. "
             "비워 두면(가게 기본값 사용) 설정 화면의 값을 따릅니다. 바꾼 값은 이후 확정되는 예약부터 적용됩니다. "
             "'기타'는 어느 카테고리에도 맞지 않는 장비를 넣는 기본 칸이라 이름을 바꾸거나 숨길 수 없습니다."
         )
@@ -110,7 +115,8 @@ class CategoryDialog(QDialog):
         left.addLayout(add_row)
 
         box = QGroupBox("선택한 카테고리")
-        form = QFormLayout(box)
+        basic = QWidget()
+        form = QFormLayout(basic)
         self.errors = FormErrors(form)
         self.name = QLineEdit()
         self.name.setMaxLength(50)
@@ -138,13 +144,28 @@ class CategoryDialog(QDialog):
         form.addRow("", self.buffer_hint)
         self.errors.add_row("연체료 없이 기다려 주는 시간", self.grace.widget, "grace_minutes")
         self.errors.add_row("연체 1일당 일 대여료의", self.multiplier.widget, "late_multiplier")
+
+        rate_tab = QWidget()
+        rate_lay = QVBoxLayout(rate_tab)
+        self.rate_use_default = QCheckBox("가게 기본값 사용")
+        self.rate_use_default.toggled.connect(lambda on: self.rate_editor.setEnabled(not on))
+        self.rate_editor = RateRuleEditor()
+        rate_lay.addWidget(self.rate_use_default)
+        rate_lay.addWidget(self.rate_editor)
+        rate_lay.addStretch(1)
+
+        self.tabs = QTabWidget()
+        self.tabs.addTab(basic, "이름·준비·연체")
+        self.tabs.addTab(rate_tab, "요금 계산")
         self.save_btn = theme.set_variant(QPushButton("저장"), "primary")
         self.save_btn.clicked.connect(self.save)
-        form.addRow(button_row(self.save_btn))
+        box_lay = QVBoxLayout(box)
+        box_lay.addWidget(self.tabs, 1)
+        box_lay.addLayout(button_row(self.save_btn))
 
         body = QHBoxLayout()
         body.addLayout(left, 3)
-        body.addWidget(box, 2)
+        body.addWidget(box, 3)
         close = QPushButton("닫기")
         close.clicked.connect(self.accept)
         lay = QVBoxLayout(self)
@@ -164,6 +185,7 @@ class CategoryDialog(QDialog):
         if select_id is None or isinstance(select_id, bool):
             select_id = self.table.selected_key()
         shop = self._shop()
+        shop_rule = self.ctx.settings.get_rate_rule()
         categories = self.ctx.assets.list_categories(include_archived=self.show_archived.isChecked())
         self._categories = {c.id: c for c in categories}
         rows = []
@@ -174,18 +196,23 @@ class CategoryDialog(QDialog):
                 format_minutes(eff.turnaround_buffer_minutes),
                 format_minutes(eff.grace_minutes),
                 _multiplier_text(eff.late_multiplier),
+                rate_rule_short(c.rate_rule or shop_rule),
                 "숨김" if c.is_archived else "사용",
             ]))
         self.table.set_rows(rows)
-        columns = {"turnaround_buffer_minutes": 1, "grace_minutes": 2, "late_multiplier": 3}
+        columns = {"turnaround_buffer_minutes": 1, "grace_minutes": 2, "late_multiplier": 3, "rate_rule": 4}
         for r, c in enumerate(categories):  # 가게 기본값과 다른 항목만 굵게
+            overridden = c.policy.overridden | ({"rate_rule"} if c.rate_rule is not None else set())
             for field, col in columns.items():
-                if field in c.policy.overridden:
-                    item = self.table.item(r, col)
+                item = self.table.item(r, col)
+                if field == "rate_rule":
+                    item.setToolTip(rate_rule_summary(c.rate_rule or shop_rule))
+                if field in overridden:
                     font = item.font()
                     font.setBold(True)
                     item.setFont(font)
-                    item.setToolTip("카테고리 설정")
+                    if field != "rate_rule":
+                        item.setToolTip("카테고리 설정")
         if select_id in self._categories:
             self.table.select_key(select_id)
         elif categories:
@@ -200,11 +227,14 @@ class CategoryDialog(QDialog):
         self.errors.clear()
         category = self._selected()
         editable = category is not None
-        for w in (self.name, self.buffer.widget, self.grace.widget, self.multiplier.widget, self.save_btn):
+        self.rate_editor.clear_errors()
+        for w in (self.name, self.buffer.widget, self.grace.widget, self.multiplier.widget, self.save_btn,
+                  self.rate_use_default):
             w.setEnabled(editable)
         self.archive_btn.setEnabled(editable and not category.is_system)
         if category is None:
             self.name.clear()
+            self.rate_editor.setEnabled(False)
             return
         shop = self._shop()
         self.name.setText(category.name)
@@ -214,6 +244,11 @@ class CategoryDialog(QDialog):
         self.grace.load(category.policy.grace_minutes, shop.grace_minutes)
         self.multiplier.load(category.policy.late_multiplier, shop.late_multiplier)
         self.buffer_hint.setText(f"= {format_minutes(self.buffer.spin.value())}")
+        shop_rule = self.ctx.settings.get_rate_rule()
+        self.rate_use_default.setText(f"가게 기본값 사용 ({rate_rule_summary(shop_rule)})")
+        self.rate_use_default.setChecked(category.rate_rule is None)
+        self.rate_editor.set_rule(category.rate_rule or shop_rule)
+        self.rate_editor.setEnabled(category.rate_rule is not None)
         self.archive_btn.setText("다시 사용" if category.is_archived else "숨기기")
 
     # ------------------------------------------------------------------ 동작
@@ -245,17 +280,29 @@ class CategoryDialog(QDialog):
             else:
                 self.refresh(updated.id)
 
+    def _show_error(self, exc) -> bool:  # noqa: ANN001
+        if self.errors.show(exc):
+            self.tabs.setCurrentIndex(0)
+            return True
+        if self.rate_editor.show_error(exc):
+            self.tabs.setCurrentIndex(1)
+            return True
+        return False
+
     def save(self) -> bool:
         category = self._selected()
         if category is None:
             return False
         self.errors.clear()
+        self.rate_editor.clear_errors()
+        rule = None if self.rate_use_default.isChecked() else self.rate_editor.rule()
         updated = feedback.run(self, lambda: self.ctx.assets.update_category(
             category.id, name=self.name.text(),
             turnaround_buffer_minutes=self.buffer.value(),
             grace_minutes=self.grace.value(),
             late_multiplier=self.multiplier.value(),
-        ), on_domain_error=self.errors.show)
+            rate_rule=rule,
+        ), on_domain_error=self._show_error)
         if updated is None:
             return False
         self.changed = True

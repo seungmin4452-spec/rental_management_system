@@ -3,8 +3,8 @@
 - DRAFT는 가용성을 점유하지 않는다. CONFIRMED부터 점유.
 - 확정·확정 예약 수정은 `BEGIN IMMEDIATE` 트랜잭션 안에서 가용성을 다시 검사한 뒤 저장한다.
   화면의 사전 검사(AvailabilityService)만 신뢰하지 않는다.
-- 확정 시 장비 단가/보증금, 유예시간/연체 배수/반납 후 준비 시간을 품목별 스냅샷으로 저장한다.
-  운영 설정은 장비 카테고리 설정이 있으면 그 값, 없으면 가게 기본값(MULTI_INDUSTRY_PLAN R2).
+- 확정 시 장비 단가/보증금, 유예시간/연체 배수/반납 후 준비 시간, 요금 규칙을 품목별 스냅샷으로 저장한다.
+  운영 설정·요금 규칙은 장비 카테고리 설정이 있으면 그 값, 없으면 가게 기본값(MULTI_INDUSTRY_PLAN R2·R3).
 """
 
 from __future__ import annotations
@@ -34,13 +34,14 @@ from rentdesk.domain.models import (
     category_sort_key,
 )
 from rentdesk.domain.policy import policy_basis
-from rentdesk.domain.pricing import OrderQuote, PricedItem, quote_order, validate_won
+from rentdesk.domain.pricing import OrderQuote, PricedItem, quote_order, rental_days, validate_won
 from rentdesk.domain.timeutil import ensure_aware, to_seoul, to_utc
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
 from rentdesk.services.availability import describe_conflict, find_conflicts
 from rentdesk.services.common import Clock, clean_optional, current_time, default_clock
-from rentdesk.services.settings import policies_for_assets, read_policy
+from rentdesk.domain.rates import DayCountMethod, RateRule
+from rentdesk.services.settings import policies_for_assets, rate_rules_for_assets, read_policy, read_rate_rule
 
 MAX_ITEMS_PER_ORDER = 30
 CANCEL_FEE_DESCRIPTION = "예약 취소 수수료"
@@ -99,7 +100,7 @@ def quote_items(
     items: Sequence[RentalItem], start_at: datetime, due_at: datetime, discount_won: int
 ) -> OrderQuote:
     return quote_order(
-        [PricedItem(i.daily_rate_snapshot_won, i.deposit_snapshot_won) for i in items],
+        [PricedItem(i.daily_rate_snapshot_won, i.deposit_snapshot_won, i.rate_rule_snapshot) for i in items],
         start_at, due_at, discount_won,
     )
 
@@ -218,25 +219,60 @@ class ReservationService:
             order = self.get_order(order_id)
             if order.status == OrderStatus.CONFIRMED:
                 snapshots = {i.asset_id: i for i in order.items}
+        rules = rate_rules_for_assets(self._conn, assets.values())
         priced = [
-            PricedItem(snapshots[a.id].daily_rate_snapshot_won, snapshots[a.id].deposit_snapshot_won)
-            if a.id in snapshots else PricedItem(a.daily_rate_won, a.deposit_won)
-            for a in assets.values()
+            PricedItem(
+                snapshots[a.id].daily_rate_snapshot_won, snapshots[a.id].deposit_snapshot_won,
+                snapshots[a.id].rate_rule_snapshot,
+            )
+            if a.id in snapshots else PricedItem(a.daily_rate_won, a.deposit_won, rules[a.id])
+            for a in (assets[asset_id] for asset_id in dict.fromkeys(asset_ids))
         ]
         return quote_order(priced, to_utc(start_at), to_utc(due_at), discount_won)
 
     def policy_basis(self, asset_ids: Sequence[int]) -> list[str]:
-        """예약 마법사 근거 문구(R2): 장비 카테고리별 준비 시간·연체 기준과 출처.
+        """예약 마법사 근거 문구(R2·R3): 장비 카테고리별 준비 시간·연체 기준·요금 규칙과 출처.
 
         담긴 장비의 카테고리 중 하나라도 카테고리 설정이 있을 때만 보여준다(단순한 가게는 빈 목록).
         """
         assets = repo.get_assets(self._conn, list(asset_ids))
         categories = repo.categories_by_id(self._conn, (a.category_id for a in assets.values()))
         used = sorted(categories.values(), key=category_sort_key)
-        if not any(c.policy.overridden for c in used):
+        if not any(c.policy.overridden or c.rate_rule is not None for c in used):
             return []
         shop = read_policy(self._conn)
-        return [policy_basis(c.name, c.policy, shop) for c in used]
+        return [policy_basis(c.name, c.policy, shop, c.rate_rule) for c in used]
+
+    def period_days_text(self, start_at: datetime, due_at: datetime) -> str:
+        """예약 마법사 1단계 대여일수 안내(가게 기본 요금 규칙 기준)."""
+        rule = read_rate_rule(self._conn)
+        days = rental_days(to_utc(start_at), to_utc(due_at), rule)
+        if rule.day_count == DayCountMethod.CALENDAR:
+            text = f"{days}일 (날짜 기준, 1박2일 = 1일)"
+        elif rule.return_grace_minutes:
+            text = f"{days}일 (24시간 단위, {rule.return_grace_minutes}분 이내 초과는 같은 날)"
+        else:
+            text = f"{days}일 (24시간 단위 올림, 최소 1일)"
+        if any(c.rate_rule is not None for c in repo.list_categories(self._conn)):
+            text += " · 카테고리마다 계산 방식이 다를 수 있음"
+        return text
+
+    def price_basis(
+        self,
+        asset_ids: Sequence[int],
+        start_at: datetime,
+        due_at: datetime,
+        *,
+        order_id: int | None = None,
+    ) -> list[str]:
+        """예약 마법사 요금 근거(R3): 주·월·주말 단가가 적용된 장비만 "CAM-001: 주 단가 적용: 1주 + 3일"."""
+        quote = self.preview_quote(asset_ids, start_at, due_at, order_id=order_id)
+        assets = repo.get_assets(self._conn, list(asset_ids))
+        return [
+            f"{assets[asset_id].asset_code}: {fee.basis}"
+            for asset_id, fee in zip(dict.fromkeys(asset_ids), quote.item_fees, strict=True)
+            if fee.uses_long_rate
+        ]
 
     # ------------------------------------------------------------------ commands
 
@@ -280,13 +316,14 @@ class ReservationService:
 
             assets = repo.get_assets(self._conn, list(clean.asset_ids))
             policies = policies_for_assets(self._conn, assets.values())
+            rules = rate_rules_for_assets(self._conn, assets.values())
             existing = {i.asset_id: i for i in order.items}
             for asset_id, item in existing.items():
                 if asset_id not in clean.asset_ids:
                     repo.delete_item(self._conn, item.id)
             for asset_id in clean.asset_ids:
                 if asset_id not in existing:
-                    self._insert_item(order_id, assets[asset_id], policies[asset_id])
+                    self._insert_item(order_id, assets[asset_id], policies[asset_id], rules[asset_id])
             repo.update_order_header(
                 self._conn, order_id, customer_id=clean.customer_id,
                 start_at=clean.start_at, due_at=clean.due_at,
@@ -356,8 +393,9 @@ class ReservationService:
             validate_reservation_window(
                 clean.start_at, clean.due_at, now, require_future_start=confirm
             )
+            rules = rate_rules_for_assets(self._conn, assets.values())
             quote_order(
-                [PricedItem(a.daily_rate_won, a.deposit_won) for a in assets.values()],
+                [PricedItem(a.daily_rate_won, a.deposit_won, rules[a.id]) for a in assets.values()],
                 clean.start_at, clean.due_at, clean.discount_won,
             )
             shop = read_policy(self._conn)
@@ -375,7 +413,7 @@ class ReservationService:
                 now=now,
             )
             for asset_id in clean.asset_ids:
-                self._insert_item(order_id, assets[asset_id], policies[asset_id])
+                self._insert_item(order_id, assets[asset_id], policies[asset_id], rules[asset_id])
             repo.insert_audit(
                 self._conn, entity_type="rental_order", entity_id=order_id, action="CREATE_DRAFT",
                 description=None, now=now,
@@ -395,15 +433,16 @@ class ReservationService:
         assets = self._check_assets(asset_ids)
         validate_reservation_window(order.start_at, order.due_at, now, require_future_start=True)
 
-        # 확정 시점의 단가/보증금/운영 설정(카테고리 설정 → 가게 기본값)을 품목별 스냅샷으로 고정
+        # 확정 시점의 단가/보증금/운영 설정/요금 규칙(카테고리 설정 → 가게 기본값)을 품목별 스냅샷으로 고정
         policies = policies_for_assets(self._conn, assets.values())
+        rules = rate_rules_for_assets(self._conn, assets.values())
         for item in order.items:
             asset, policy = assets[item.asset_id], policies[item.asset_id]
             repo.update_item_snapshot(
                 self._conn, item.id,
                 daily_rate_won=asset.daily_rate_won, deposit_won=asset.deposit_won,
                 late_multiplier=policy.late_multiplier, grace_minutes=policy.grace_minutes,
-                buffer_minutes=policy.turnaround_buffer_minutes,
+                buffer_minutes=policy.turnaround_buffer_minutes, rate_rule=rules[item.asset_id],
             )
         quote_items(
             repo.get_items(self._conn, order_id), order.start_at, order.due_at, order.discount_won
@@ -421,12 +460,12 @@ class ReservationService:
             description=order.order_no, now=now,
         )
 
-    def _insert_item(self, order_id: int, asset: Asset, policy: RentalPolicy) -> None:
+    def _insert_item(self, order_id: int, asset: Asset, policy: RentalPolicy, rule: RateRule) -> None:
         repo.insert_item(
             self._conn, order_id=order_id, asset_id=asset.id,
             daily_rate_won=asset.daily_rate_won, deposit_won=asset.deposit_won,
             late_multiplier=policy.late_multiplier, grace_minutes=policy.grace_minutes,
-            buffer_minutes=policy.turnaround_buffer_minutes,
+            buffer_minutes=policy.turnaround_buffer_minutes, rate_rule=rule,
         )
 
     def _raise_if_conflicts(

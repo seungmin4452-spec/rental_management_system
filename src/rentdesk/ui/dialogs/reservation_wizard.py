@@ -221,8 +221,9 @@ class ReservationWizard(QDialog):
 
     def _update_days(self) -> None:
         try:
-            q = self.ctx.reservations.preview_quote([], self.start.value(), self.due.value())
-            self.days_label.setText(f"{q.rental_days}일 (24시간 단위 올림, 최소 1일)")
+            self.days_label.setText(
+                self.ctx.reservations.period_days_text(self.start.value(), self.due.value())
+            )
         except DomainError as exc:
             self.days_label.setText(exc.message)
 
@@ -322,10 +323,15 @@ class ReservationWizard(QDialog):
             if not self.errors3.show(exc):
                 self.quote_label.setText(exc.message)
             return
+        price_lines = self.ctx.reservations.price_basis(
+            sorted(self._selected), self.start.value(), self.due.value(),
+            order_id=self.order.id if self.order else None,
+        )
         self.quote_label.setText(
-            f"대여일수 {q.rental_days}일 · 기본 대여료 {format_won(q.base_rental_fee_won)}"
+            f"대여일수 {q.days_label} · 기본 대여료 {format_won(q.base_rental_fee_won)}"
             f" − 할인 {format_won(q.discount_won)} = <b>{format_won(q.expected_total_rental_fee_won)}</b>"
             f"<br>보증금 예상: <b>{format_won(q.expected_deposit_won)}</b>"
+            + "".join(f"<br>{line}" for line in price_lines)
             + "".join(f"<br>{line}" for line in self.ctx.reservations.policy_basis(sorted(self._selected)))
         )
 

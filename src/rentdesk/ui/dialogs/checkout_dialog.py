@@ -121,7 +121,7 @@ class CheckoutDialog(QDialog):
         self.fill_btn.setEnabled(any(self._remaining))
         self.amounts.setText(
             f"받을 대여료: <b>{format_won(q.expected_total_rental_fee_won)}</b>"
-            f" ({q.rental_days}일, 할인 {format_won(q.discount_won)} 반영) · "
+            f" ({q.days_label}, 할인 {format_won(q.discount_won)} 반영) · "
             f"받을 보증금: <b>{format_won(q.expected_deposit_won)}</b> · "
             f"선입금: 대여료 {format_won(summary.net_rental_receipts_won)}, "
             f"보증금 {format_won(summary.deposit_held_won)} · "

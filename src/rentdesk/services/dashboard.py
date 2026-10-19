@@ -15,6 +15,7 @@ from rentdesk.domain import availability as av
 from rentdesk.domain.display import seoul_day_range, seoul_today
 from rentdesk.domain.models import ItemStatus, OrderStatus
 from rentdesk.domain.pricing import late_fee
+from rentdesk.domain.rates import rate_rule_from_json
 from rentdesk.domain.timeutil import parse_utc_str
 from rentdesk.persistence import repositories as repo
 from rentdesk.services.availability import AvailabilityService, FollowupRisk
@@ -94,7 +95,7 @@ def overdue_rows(conn: sqlite3.Connection, at: datetime) -> list[OverdueRow]:
             continue
         fee = late_fee(
             r["daily_rate_snapshot_won"], due, at, r["grace_minutes_snapshot"],
-            Decimal(r["late_multiplier_snapshot"]),
+            Decimal(r["late_multiplier_snapshot"]), rate_rule_from_json(r["rate_rule_snapshot_json"]),
         )
         result.append(OverdueRow(
             item_id=r["item_id"], asset_id=r["asset_id"], asset_code=r["asset_code"],

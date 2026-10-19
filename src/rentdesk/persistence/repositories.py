@@ -31,6 +31,7 @@ from rentdesk.domain.models import (
     RentalOrder,
     ReturnCondition,
 )
+from rentdesk.domain.rates import RateRule, rate_rule_from_json, rate_rule_to_json
 from rentdesk.domain.timeutil import parse_utc_str, parse_utc_str_opt, to_utc_str
 
 
@@ -59,6 +60,14 @@ def _row_to_category(row: sqlite3.Row) -> Category:
     return Category(
         id=row["id"], name=row["name"], is_archived=bool(row["is_archived"]),
         is_system=bool(row["is_system"]), policy=_row_to_category_policy(row),
+        rate_rule=None if row["rate_rule_json"] is None else rate_rule_from_json(row["rate_rule_json"]),
+    )
+
+
+def update_category_rate_rule(conn: sqlite3.Connection, category_id: int, rule: RateRule | None) -> None:
+    conn.execute(
+        "UPDATE categories SET rate_rule_json = ? WHERE id = ?",
+        (None if rule is None else rate_rule_to_json(rule), category_id),
     )
 
 
@@ -379,6 +388,7 @@ def _row_to_item(row: sqlite3.Row) -> RentalItem:
         ),
         return_note=row["return_note"],
         turnaround_buffer_snapshot_minutes=row["buffer_minutes"],
+        rate_rule_snapshot=rate_rule_from_json(row["rate_rule_snapshot_json"]),
     )
 
 
@@ -490,16 +500,18 @@ def insert_item(
     late_multiplier: Decimal,
     grace_minutes: int,
     buffer_minutes: int,
+    rate_rule: RateRule,
 ) -> int:
     cur = conn.execute(
         """
         INSERT INTO rental_items (order_id, asset_id, status, daily_rate_snapshot_won,
                                   deposit_snapshot_won, late_multiplier_snapshot,
-                                  grace_minutes_snapshot, turnaround_buffer_snapshot_minutes)
-        VALUES (?, ?, 'RESERVED', ?, ?, ?, ?, ?)
+                                  grace_minutes_snapshot, turnaround_buffer_snapshot_minutes,
+                                  rate_rule_snapshot_json)
+        VALUES (?, ?, 'RESERVED', ?, ?, ?, ?, ?, ?)
         """,
         (order_id, asset_id, daily_rate_won, deposit_won, str(late_multiplier), grace_minutes,
-         buffer_minutes),
+         buffer_minutes, rate_rule_to_json(rate_rule)),
     )
     return int(cur.lastrowid)
 
@@ -513,15 +525,17 @@ def update_item_snapshot(
     late_multiplier: Decimal,
     grace_minutes: int,
     buffer_minutes: int,
+    rate_rule: RateRule,
 ) -> None:
     conn.execute(
         """
         UPDATE rental_items SET daily_rate_snapshot_won = ?, deposit_snapshot_won = ?,
                late_multiplier_snapshot = ?, grace_minutes_snapshot = ?,
-               turnaround_buffer_snapshot_minutes = ?
+               turnaround_buffer_snapshot_minutes = ?, rate_rule_snapshot_json = ?
         WHERE id = ?
         """,
-        (daily_rate_won, deposit_won, str(late_multiplier), grace_minutes, buffer_minutes, item_id),
+        (daily_rate_won, deposit_won, str(late_multiplier), grace_minutes, buffer_minutes,
+         rate_rule_to_json(rate_rule), item_id),
     )
 
 
@@ -1012,6 +1026,7 @@ def out_item_details(conn: sqlite3.Connection) -> list[sqlite3.Row]:
         """
         SELECT i.id AS item_id, i.asset_id, a.asset_code, a.name AS asset_name,
                i.daily_rate_snapshot_won, i.late_multiplier_snapshot, i.grace_minutes_snapshot,
+               i.rate_rule_snapshot_json,
                o.id AS order_id, o.order_no, o.due_at_utc, o.start_at_utc,
                c.id AS customer_id, c.name AS customer_name
         FROM rental_items i

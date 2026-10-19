@@ -22,6 +22,7 @@ from rentdesk.domain.models import (
     OrderStatus,
 )
 from rentdesk.domain.pricing import validate_won
+from rentdesk.domain.rates import RateRule, rate_rule_to_json, validate_rate_rule
 from rentdesk.domain.timeutil import format_seoul, parse_utc_str, parse_utc_str_opt
 from rentdesk.persistence import repositories as repo
 from rentdesk.persistence.db import transaction
@@ -89,6 +90,17 @@ def _clean_category_policy(
             "grace_minutes", "연체료 없이 기다려 주는 시간", grace_minutes),
         late_multiplier=None if late_multiplier is None else validate_multiplier(late_multiplier),
     )
+
+
+UNCHANGED = object()  # update_category: 요금 규칙을 건드리지 않음
+
+
+def _clean_rate_rule(rule: object) -> RateRule | None:
+    if rule is None:
+        return None
+    if not isinstance(rule, RateRule):
+        raise ValidationError("rate_rule", "요금 규칙이 올바르지 않습니다.")
+    return validate_rate_rule(rule)
 
 
 @dataclass(frozen=True)
@@ -166,10 +178,15 @@ class AssetService:
         turnaround_buffer_minutes: int | None,
         grace_minutes: int | None,
         late_multiplier: str | Decimal | None,
+        rate_rule: RateRule | None | object = UNCHANGED,
     ) -> Category:
-        """카테고리 관리 창의 [저장]: 이름(바뀐 경우)과 운영 설정을 한 트랜잭션으로 저장."""
+        """카테고리 관리 창의 [저장]: 이름(바뀐 경우)·운영 설정·요금 규칙을 한 트랜잭션으로 저장.
+
+        `rate_rule`: 규칙 = 카테고리 요금 규칙, None = 가게 기본 규칙 사용, 생략 = 그대로 둠.
+        """
         clean = clean_required(name, "category", "카테고리", 50)
         policy = _clean_category_policy(turnaround_buffer_minutes, grace_minutes, late_multiplier)
+        rule = rate_rule if rate_rule is UNCHANGED else _clean_rate_rule(rate_rule)
         now = current_time(self._clock)
         with transaction(self._conn):
             current = repo.get_category(self._conn, category_id)
@@ -178,7 +195,29 @@ class AssetService:
             if clean != current.name:
                 self._rename_in_txn(category_id, clean, now)
             self._set_policy_in_txn(category_id, policy, now)
+            if rule is not UNCHANGED:
+                self._set_rate_rule_in_txn(category_id, rule, now)  # type: ignore[arg-type]
         return repo.get_category(self._conn, category_id)
+
+    def update_category_rate_rule(self, category_id: int, rule: RateRule | None) -> Category:
+        """카테고리 요금 규칙(MULTI_INDUSTRY_PLAN R3). None = 가게 기본 규칙 사용.
+
+        이미 확정된 예약은 품목별 요금 규칙 스냅샷을 쓰므로 바뀌지 않는다.
+        """
+        clean = _clean_rate_rule(rule)
+        now = current_time(self._clock)
+        with transaction(self._conn):
+            if repo.get_category(self._conn, category_id) is None:
+                raise NotFoundError("카테고리를 찾을 수 없습니다.")
+            self._set_rate_rule_in_txn(category_id, clean, now)
+        return repo.get_category(self._conn, category_id)
+
+    def _set_rate_rule_in_txn(self, category_id: int, rule: RateRule | None, now: datetime) -> None:
+        repo.update_category_rate_rule(self._conn, category_id, rule)
+        repo.insert_audit(
+            self._conn, entity_type="category", entity_id=category_id, action="UPDATE_RATE_RULE",
+            description="가게 기본값" if rule is None else rate_rule_to_json(rule)[:500], now=now,
+        )
 
     def _rename_in_txn(self, category_id: int, name: str, now: datetime) -> None:
         category = self._editable_category(category_id, "이름을 바꿀")

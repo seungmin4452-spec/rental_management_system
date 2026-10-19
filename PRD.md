@@ -275,16 +275,31 @@ is_overlap = (A_start < B_end) and (B_start < A_end)
 
 ### 7.2 대여일 수 및 약정 대여료
 
-MVP는 **24시간 단위 올림, 최소 1일**을 사용한다. 예: 25시간 대여 = 2일. 
+장비에는 **일 대여료 하나만** 입력한다. 대여일수 계산 방식과 주말·주·월 요금은 **요금 규칙**으로 정하며(2026-10-16 결정, `MULTI_INDUSTRY_PLAN.md` R3), 규칙은 **가게 기본값 → 카테고리 규칙(통째로 덮어씀)** 2단계다. 기본 규칙은 MVP와 같다(**24시간 단위 올림, 최소 1일**, 주말·주·월 요금 꺼짐). 예: 25시간 대여 = 2일.
 
-> 2026-10-16: 1.0에서 카테고리별 요금 규칙(날짜 기준·주말·주·월 단가)과 품목별 요금 규칙 스냅샷으로 확장한다(`MULTI_INDUSTRY_PLAN.md` R3). 구현 시 이 절과 7.3을 갱신한다.
+| 규칙 항목 | 값 | 기본 |
+|---|---|---|
+| 대여일수 계산 | ① 24시간 단위 올림(반납 여유 N분 이내 초과는 같은 날) ② 날짜 기준(서울 날짜 반납일 − 대여일, 당일 = 1일, 1박2일 = 1일) | ①, 여유 0분 |
+| 주말 요금 | 주말 범위(시작 요일·시각 이후 시작 ~ 반납 요일·시각 이전 반납) 안에 예약이 완전히 들어가면 일 대여료 × 배수 | 꺼짐, 금 12:00 ~ 월 12:00, ×2 |
+| 주 단가 | 7일 요금 = 일 대여료 × 배수(0 초과 7 이하) | 꺼짐, ×5 |
+| 월 단가 | 30일 요금 = 일 대여료 × 배수(0 초과 30 이하) | 꺼짐, ×20 |
 
 ```python
-rental_days = max(1, ceil((due_at - start_at).total_seconds() / 86400))
-base_rental_fee_won = sum(item.daily_rate_snapshot_won * rental_days for item in items)
+d = rental_days(start_at, due_at, rule)                      # 최소 1일
+D = item.daily_rate_snapshot_won; W, M, WE = round_half_up(D × 각 배수)
+day_fee   = d × D
+week_fee  = (d // 7) × W + min((d % 7) × D, W)               # 남은 날이 1주 요금보다 비싸면 1주
+month_fee = (d // 30) × M + min(week_fee(d % 30) 또는 (d % 30) × D, M)
+weekend   = WE if 주말 범위 안 else 적용 안 함
+item_period_fee = min(사용 중인 방식들)                        # 고객에게 가장 싼 값, 같으면 일→주→월→주말 순
+base_rental_fee_won = sum(item_period_fee for item in items)  # 품목마다 규칙이 다를 수 있음
 expected_deposit_won = sum(item.deposit_snapshot_won for item in items)
 expected_total_rental_fee_won = base_rental_fee_won - order_discount_won
 ```
+
+- 예약 확정 시 품목마다 실제 적용 요금 규칙을 `rental_items.rate_rule_snapshot_json`(검증된 JSON)으로 저장한다. 견적·출고 청구(`RENTAL`)·출고 전 기간 수정·연장·연체료가 모두 이 스냅샷으로 계산한다. 마이그레이션 006 이전 품목은 기본 규칙으로 채운다.
+- 연장 추가 대여료 = Σ기간 요금(새 반납 예정) − Σ기간 요금(기존 반납 예정). 긴 단가로 넘어가 총액이 줄면 **추가 요금 0원, 환급 없음**.
+- 시간 단위 대여료는 두지 않는다(연체료만 시간 단위 선택 가능, 7.3).
 
 - 모든 할인은 `0 <= discount_won <= base_rental_fee_won`.
 - 예약 확정 시 장비별 단가/보증금을 `rental_items`에 **스냅샷**으로 복사하여 이후 장비 기본요금이 변해도 과거 예약 금액은 바뀌지 않게 한다.
@@ -296,14 +311,19 @@ expected_total_rental_fee_won = base_rental_fee_won - order_discount_won
 
 ```python
 late_seconds = max(0, (actual_return_at - due_at).total_seconds() - grace_minutes * 60)
+# 하루 단위(기본)
 late_days = ceil(late_seconds / 86400) if late_seconds > 0 else 0
 late_fee_won = round_half_up(item.daily_rate_snapshot_won * late_days * late_multiplier)
+# 시간 단위(요금 규칙에서 선택): 꽉 찬 24시간마다 일 대여료, 나머지는 1시간 올림 × (일 대여료 ÷ N), 하루치 상한
+full_days, rest = divmod(late_seconds, 86400)
+partial = min(D * ceil(rest / 3600) / N, D)
+late_fee_won = round_half_up((D * full_days + partial) * late_multiplier)
 ```
 
 - 기본 `grace_minutes=60`, `late_multiplier=1.0`.
 - 연체료는 **해당 장비가 실제 반납되는 순간 한 번만 확정 청구**한다.
 - 반납 전 화면에서는 예측 연체료를 표시하되 `charge_lines`에는 기록하지 않는다.
-- `late_multiplier`와 `grace_minutes`는 예약 확정 시 **품목별 스냅샷**으로 저장하고, `turnaround_buffer_minutes`는 **주문별 스냅샷**으로 저장하여 설정 변경이 기존 약정에 소급 적용되지 않도록 한다. `late_multiplier_snapshot`은 SQLite `TEXT`에 십진수 문자열로 저장하고 `Decimal`로 계산한다.
+- `late_multiplier`·`grace_minutes`·`turnaround_buffer_minutes`(M4.6 R2부터)·요금 규칙(연체료 계산 방식 포함, R3)은 예약 확정 시 **품목별 스냅샷**으로 저장하여 설정 변경이 기존 약정에 소급 적용되지 않도록 한다. 값은 카테고리 설정이 있으면 그 값, 없으면 가게 기본값이다. 주문 열 `turnaround_buffer_snapshot_minutes`는 호환용으로만 남는다. `late_multiplier_snapshot`은 SQLite `TEXT`에 십진수 문자열로 저장하고 `Decimal`로 계산한다.
 - `round_half_up`은 십진수 `Decimal`을 사용한다. 모든 최종 금액은 정수 원으로 저장.
 - 반납 시간은 출고 시간보다 빠를 수 없으며, 미래 시각으로 반납 확정할 수 없다. 과거로 시간을 입력하더라도 원래 예약/정산 내역이 임의로 소급 변경되지 않도록 영향이 있는 기존 예약을 경고한다.
 

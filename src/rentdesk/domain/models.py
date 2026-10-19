@@ -11,6 +11,8 @@ from datetime import datetime
 from decimal import Decimal
 from enum import StrEnum
 
+from rentdesk.domain.rates import DEFAULT_RATE_RULE, RateRule
+
 
 class OrderStatus(StrEnum):
     DRAFT = "DRAFT"
@@ -125,6 +127,7 @@ class Category:
     is_archived: bool
     is_system: bool = False  # 항상 있는 "기타"(M4.6 R1): 이름 변경·숨김 불가, 목록 맨 끝
     policy: CategoryPolicy = field(default_factory=CategoryPolicy)  # M4.6 R2: 비면 가게 기본값
+    rate_rule: RateRule | None = None  # M4.6 R3: None = 가게 기본 요금 규칙 사용
 
 
 SYSTEM_CATEGORY_NAME = "기타"
@@ -180,6 +183,7 @@ class RentalItem:
     return_condition: ReturnCondition | None
     return_note: str | None
     turnaround_buffer_snapshot_minutes: int = 0  # M4.6 R2: 품목별 반납 후 준비 시간(확정 시 스냅샷)
+    rate_rule_snapshot: RateRule = DEFAULT_RATE_RULE  # M4.6 R3: 품목별 요금 규칙(확정 시 스냅샷)
 
 
 @dataclass(frozen=True)
