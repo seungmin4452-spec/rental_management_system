@@ -146,6 +146,7 @@ class AppController:
         if old is not None:
             old.close()
             old.deleteLater()
+        self.window.offer_starter()  # 첫 실행(실제 데이터 비어 있음)에만 시작 도우미
 
     @property
     def in_demo(self) -> bool:

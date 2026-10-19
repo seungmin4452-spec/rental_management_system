@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "key": "camping",
+  "label": "캠핑",
+  "description": "텐트·침낭·캠핑 가구. 세척·건조 시간을 길게, 날짜 기준 요금, 주말 요금 사용.",
+  "order": 30,
+  "categories": [
+    {"name": "텐트·타프", "turnaround_buffer_minutes": 1440, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "침낭·매트", "turnaround_buffer_minutes": 1440, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "테이블·체어", "turnaround_buffer_minutes": 720, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "조리", "turnaround_buffer_minutes": 720, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "랜턴·전원", "turnaround_buffer_minutes": 720, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "난방", "turnaround_buffer_minutes": 720, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}}
+  ]
+}

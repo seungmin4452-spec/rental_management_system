@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "key": "event",
+  "label": "행사·음향·조명",
+  "description": "스피커·믹서·무대 조명·프로젝터. 반납 후 점검 4시간, 연체료 없이 기다려 주는 시간 2시간.",
+  "order": 40,
+  "categories": [
+    {"name": "스피커", "turnaround_buffer_minutes": 240, "grace_minutes": 120},
+    {"name": "믹서", "turnaround_buffer_minutes": 240, "grace_minutes": 120},
+    {"name": "마이크", "turnaround_buffer_minutes": 240, "grace_minutes": 120},
+    {"name": "무대 조명", "turnaround_buffer_minutes": 240, "grace_minutes": 120},
+    {"name": "영상·프로젝터", "turnaround_buffer_minutes": 240, "grace_minutes": 120},
+    {"name": "스크린", "turnaround_buffer_minutes": 240, "grace_minutes": 120},
+    {"name": "케이블·스탠드", "turnaround_buffer_minutes": 240, "grace_minutes": 120}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "key": "baby",
+  "label": "유아용품",
+  "description": "유모차·카시트·유아 침대. 소독 시간 24시간, 택배 지연을 고려해 연체료 없이 24시간 기다림, 주·월 단가 사용.",
+  "order": 50,
+  "categories": [
+    {"name": "유모차", "turnaround_buffer_minutes": 1440, "grace_minutes": 1440, "rate_rule": {"weekly_enabled": true, "monthly_enabled": true}},
+    {"name": "카시트", "turnaround_buffer_minutes": 1440, "grace_minutes": 1440, "rate_rule": {"weekly_enabled": true, "monthly_enabled": true}},
+    {"name": "침대·범퍼", "turnaround_buffer_minutes": 1440, "grace_minutes": 1440, "rate_rule": {"weekly_enabled": true, "monthly_enabled": true}},
+    {"name": "바운서·보행기", "turnaround_buffer_minutes": 1440, "grace_minutes": 1440, "rate_rule": {"weekly_enabled": true, "monthly_enabled": true}}
+  ]
+}

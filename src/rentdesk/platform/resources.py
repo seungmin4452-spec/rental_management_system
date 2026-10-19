@@ -20,6 +20,11 @@ def get_sample_data_dir() -> Path:
     return get_resources_dir() / "sample_data"
 
 
+def get_starter_dir() -> Path:
+    """시작 도우미(M4.6 R7)의 장비 종류별 추천 카테고리 데이터(`*.json`)."""
+    return get_resources_dir() / "starter"
+
+
 def get_app_icon_path() -> Path:
     """창·작업 표시줄 아이콘(256px PNG). 원본은 `scripts/make_icons.py`로 생성."""
     return get_resources_dir() / "icons" / "app.png"

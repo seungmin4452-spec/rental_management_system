@@ -31,6 +31,7 @@ datas = [
     (str(ROOT / "src" / "rentdesk" / "resources" / "icons" / "*.png"), "rentdesk/resources/icons"),
     (str(ROOT / "src" / "rentdesk" / "resources" / "icons" / "*.svg"), "rentdesk/resources/icons"),
     (str(ROOT / "src" / "rentdesk" / "resources" / "support" / "support.json"), "rentdesk/resources/support"),
+    (str(ROOT / "src" / "rentdesk" / "resources" / "starter" / "*.json"), "rentdesk/resources/starter"),
 ]
 
 a = Analysis(  # noqa: F821

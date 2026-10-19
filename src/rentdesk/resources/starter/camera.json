@@ -1,0 +1,16 @@
+{
+  "format": 1,
+  "key": "camera",
+  "label": "카메라·촬영",
+  "description": "카메라·렌즈·촬영 조명·음향. 날짜 기준(1박2일 = 1일) 요금, 주말 요금 사용.",
+  "order": 10,
+  "categories": [
+    {"name": "카메라 바디", "turnaround_buffer_minutes": 60, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "렌즈", "turnaround_buffer_minutes": 60, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "조명", "turnaround_buffer_minutes": 120, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "음향", "turnaround_buffer_minutes": 120, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "삼각대·짐벌", "turnaround_buffer_minutes": 60, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "모니터", "turnaround_buffer_minutes": 60, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}},
+    {"name": "배터리·전원", "turnaround_buffer_minutes": 60, "rate_rule": {"day_count": "CALENDAR", "weekend_enabled": true}}
+  ]
+}

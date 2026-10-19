@@ -314,3 +314,19 @@ def test_auto_backup_disabled_in_demo(conn, clock, ui, tmp_path):
     page = window.page_by_key["settings"]
     assert not page.auto_enabled.isEnabled()
     assert "예제 데이터 모드" in page.auto_note.text()
+
+
+def test_licensed_first_start_offers_starter_once(controller, tmp_path, key, license_service,
+                                                  opened_starters):
+    license_service.install(_license_file(tmp_path, key, license_service))
+    assert controller.start() and not controller.in_demo
+    assert len(opened_starters) == 1 and opened_starters[0].first_run  # 빈 실제 DB → 시작 도우미
+    opened_starters[0].reject()  # 건너뛰기
+    controller.show(controller._context(controller.real_conn, demo=False))  # 다시 열어도
+    assert len(opened_starters) == 1  # 다시 묻지 않음
+
+
+def test_demo_start_does_not_offer_starter(controller, opened_starters):
+    controller.run_gate = lambda **kw: GateChoice.DEMO
+    assert controller.start() and controller.in_demo
+    assert not opened_starters

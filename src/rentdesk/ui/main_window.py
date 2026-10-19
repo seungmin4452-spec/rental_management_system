@@ -279,8 +279,32 @@ class MainWindow(QMainWindow):
         menu.addAction(quit_action)
         about = QAction("프로그램 정보·문의", self)
         about.triggered.connect(self.show_about)
+        self.starter_action = QAction("시작 도우미(장비 종류별 카테고리 추가)", self)
+        self.starter_action.triggered.connect(lambda: self.open_starter())
         help_menu = self.menuBar().addMenu("도움말")
+        help_menu.addAction(self.starter_action)
         help_menu.addAction(about)
+
+    def open_starter(self, *, first_run: bool = False) -> bool:
+        """시작 도우미(M4.6 R7). 카테고리를 추가했으면 True."""
+        from rentdesk.ui.dialogs.starter_dialog import StarterDialog
+
+        kinds = feedback.run(self, self.ctx.starter.kinds)
+        if not kinds:
+            return False
+        dlg = StarterDialog(self.ctx, kinds, self, first_run=first_run)
+        dlg.exec()
+        if dlg.result_data is None:
+            return False
+        self.data_changed()
+        return True
+
+    def offer_starter(self) -> bool:
+        """첫 실행(실제 데이터가 비어 있고 아직 안 물어봄)이면 시작 도우미를 띄운다. 예제 데이터에서는 띄우지 않는다."""
+        if self.ctx.is_demo or not feedback.run(self, self.ctx.starter.should_offer):
+            return False
+        self.open_starter(first_run=True)
+        return True
 
     def show_about(self) -> None:
         from rentdesk.ui.dialogs.about_dialog import AboutDialog

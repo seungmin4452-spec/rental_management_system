@@ -13,16 +13,20 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime, timedelta
 
+from rentdesk.domain.extra_charges import ExtraChargeReason
+from rentdesk.domain.kits import KitDiscountKind
 from rentdesk.domain.models import CustomerType, MoneyKind, PaymentMethod, ReturnCondition
 from rentdesk.domain.timeutil import SEOUL, to_utc
 from rentdesk.services.assets import AssetInput, AssetService
 from rentdesk.services.checkout import CheckoutInput, CheckoutService
 from rentdesk.services.customers import CustomerInput, CustomerService
+from rentdesk.services.kits import KitInput, KitPick, KitService
 from rentdesk.services.maintenance import MaintenanceService
 from rentdesk.services.reservations import ReservationInput, ReservationService
 from rentdesk.services.returns import ReturnItemInput, ReturnService
 from rentdesk.services.settings import SettingsService
 from rentdesk.services.settlements import MoneyInput, SettlementService
+from rentdesk.services.starter import StarterService
 
 SAMPLE_ASSETS = [
     # (code, name, category, brand, model, rate, deposit)
@@ -38,6 +42,36 @@ SAMPLE_ASSETS = [
     ("AUD-0002", "샷건 마이크", "음향", "예제음향", "S1", 10_000, 30_000),
     ("TRP-0001", "비디오 삼각대", "삼각대", "예제지지", "T75", 8_000, 20_000),
     ("TRP-0002", "비디오 삼각대", "삼각대", "예제지지", "T75", 8_000, 20_000),
+]
+
+# M4.6 R7: 여러 업종이 섞인 가게. 카테고리는 시작 도우미 데이터(공구·캠핑·행사·유아)로 추가한다.
+# 카메라 장비는 위 카테고리(가게 기본 설정)를 그대로 써서 기존 시연 금액이 바뀌지 않게 한다.
+SAMPLE_STARTER_KINDS = ("tools", "camping", "event", "baby")
+SAMPLE_MULTI_ASSETS = [
+    ("TOL-0001", "전동 해머드릴", "전동공구", "예제공구", "HD20", 15_000, 50_000),
+    ("TOL-0002", "레이저 레벨기", "측정·측량", "예제공구", "LV3", 12_000, 50_000),
+    ("TOL-0003", "발전기 3kW", "발전기·컴프레서", "예제동력", "G3000", 40_000, 150_000),
+    ("CMP-0001", "4인용 텐트", "텐트·타프", "예제캠프", "T4", 30_000, 50_000),
+    ("CMP-0002", "렉타 타프", "텐트·타프", "예제캠프", "R1", 15_000, 30_000),
+    ("CMP-0003", "동계 침낭", "침낭·매트", "예제캠프", "S-10", 8_000, 20_000),
+    ("CMP-0004", "동계 침낭", "침낭·매트", "예제캠프", "S-10", 8_000, 20_000),
+    ("CMP-0005", "자충 매트", "침낭·매트", "예제캠프", "M5", 5_000, 10_000),
+    ("CMP-0006", "자충 매트", "침낭·매트", "예제캠프", "M5", 5_000, 10_000),
+    ("EVT-0001", "액티브 스피커 12인치", "스피커", "예제음향", "A12", 40_000, 100_000),
+    ("EVT-0002", "액티브 스피커 12인치", "스피커", "예제음향", "A12", 40_000, 100_000),
+    ("EVT-0003", "아날로그 믹서 12채널", "믹서", "예제음향", "MX12", 30_000, 80_000),
+    ("EVT-0004", "무선 핸드마이크", "마이크", "예제음향", "H1", 10_000, 30_000),
+    ("EVT-0005", "무선 핸드마이크", "마이크", "예제음향", "H1", 10_000, 30_000),
+    ("BBY-0001", "휴대용 유모차", "유모차", "예제베이비", "S1", 8_000, 50_000),
+    ("BBY-0002", "회전형 카시트", "카시트", "예제베이비", "C360", 7_000, 50_000),
+]
+# (이름, 구성 장비, 구성품 체크리스트, 정액 할인, 비율 할인)
+SAMPLE_KITS = [
+    ("카메라 기본 세트", ["CAM-0002", "LEN-0001"], ["배터리 2개", "충전기", "메모리 카드"], 5_000, None),
+    ("캠핑 2인 세트", ["CMP-0001", "CMP-0002", "CMP-0003", "CMP-0004", "CMP-0005", "CMP-0006"],
+     ["텐트 폴·팩", "망치", "수납 가방"], 0, "10"),
+    ("행사 음향 세트", ["EVT-0001", "EVT-0002", "EVT-0003", "EVT-0004", "EVT-0005"],
+     ["스피커 스탠드 2개", "전원 케이블", "마이크 건전지"], 20_000, None),
 ]
 
 SAMPLE_CUSTOMERS = [
@@ -174,3 +208,88 @@ def load_sample_data(conn: sqlite3.Connection, now: datetime) -> None:
     maintenance.create_block(
         a["TRP-0001"], real_now, real_now + timedelta(days=1), "예제: 정기 점검"
     )
+
+    _load_multi_industry(
+        conn, real_now, clock, a, c, assets, reservations, checkout, returns, settlements
+    )
+
+
+def _next_weekday(base: datetime, weekday: int, min_days: int) -> int:
+    """`base`(서울) 기준 `min_days`일 뒤 이후 처음 오는 `weekday`(0=월)까지의 일수."""
+    start = base.astimezone(SEOUL).date() + timedelta(days=min_days)
+    return min_days + (weekday - start.weekday()) % 7
+
+
+def _load_multi_industry(conn, real_now, clock, a, c, assets, reservations, checkout, returns,
+                         settlements) -> None:
+    """여러 업종 장비·카테고리 설정·세트 시연(M4.6 R7)."""
+    clock.now = real_now - timedelta(days=30)
+    StarterService(conn, clock).apply(SAMPLE_STARTER_KINDS)
+    for code, name, category, brand, model, rate, deposit in SAMPLE_MULTI_ASSETS:
+        a[code] = assets.create_asset(AssetInput(
+            name=name, category_name=category, daily_rate_won=rate, deposit_won=deposit,
+            asset_code=code, brand=brand, model=model, location="예제 창고",
+        )).id
+    kits = KitService(conn, clock)
+    kit_ids = {}
+    for name, codes, checklist, fixed, percent in SAMPLE_KITS:
+        kit_ids[name] = kits.create_kit(KitInput(
+            name=name, asset_ids=[a[x] for x in codes], checklist=checklist,
+            discount_kind=KitDiscountKind.PERCENT if percent else KitDiscountKind.FIXED,
+            discount_won=fixed, discount_percent=percent,
+        )).id
+
+    def book_kit(customer: int, kit: str, start: datetime, due: datetime, notes: str | None = None) -> int:
+        clock.now = min(to_utc(start) - timedelta(days=1), real_now)
+        ids = kits.get_kit(kit_ids[kit]).asset_ids
+        return reservations.create_confirmed(ReservationInput(
+            customer_id=customer, start_at=start, due_at=due, asset_ids=list(ids),
+            kits=[KitPick(kit_id=kit_ids[kit], asset_ids=list(ids))], notes=notes,
+        )).id
+
+    # 12) 행사 음향 세트: 반납 완료(마이크 건전지 누락 → 추가 비용) + 정산 마무리
+    o12 = book_kit(c[4], "행사 음향 세트", _at_hour(real_now, -8, 10), _at_hour(real_now, -7, 22))
+    order = reservations.get_order(o12)
+    kit_id = order.kits[0].id
+    clock.now = to_utc(_at_hour(real_now, -8, 10, 10))
+    checkout.checkout(o12, CheckoutInput(
+        checkout_at=clock.now, note="스피커 외관 이상 없음", deposit_in_won=340_000,
+        payment_method=PaymentMethod.TRANSFER, kit_checks={kit_id: [True, True, True]},
+    ))
+    clock.now = to_utc(_at_hour(real_now, -7, 21, 30))
+    mic = next(i.id for i in order.items if i.asset_id == a["EVT-0005"])
+    returns.return_items(o12, [
+        ReturnItemInput(
+            item_id=i.id, returned_at=clock.now,
+            damage_fee_won=5_000 if i.id == mic else 0,
+            extra_charge_reason=ExtraChargeReason.MISSING_PART if i.id == mic else ExtraChargeReason.DAMAGE,
+        )
+        for i in order.items
+    ], kit_checks={kit_id: [True, True, False]})
+    clock.now = to_utc(_at_hour(real_now, -7, 21, 40))
+    settlements.finalize(o12, settlements.final_plan(o12), payment_method=PaymentMethod.TRANSFER)
+
+    # 13) 공구 대여 중(10일 → 주 단가 1주 + 3일), 내일 반납 예정
+    clock.now = min(to_utc(_at_hour(real_now, -10, 9)), real_now)
+    o13 = reservations.create_confirmed(ReservationInput(
+        customer_id=c[5], start_at=_at_hour(real_now, -9, 9), due_at=_at_hour(real_now, 1, 9),
+        asset_ids=[a["TOL-0001"], a["TOL-0002"]], notes="예제: 인테리어 현장",
+    )).id
+    clock.now = to_utc(_at_hour(real_now, -9, 9, 10))
+    checkout.checkout(o13, CheckoutInput(
+        checkout_at=clock.now, note="드릴 비트 세트 포함", deposit_in_won=100_000,
+        payment_method=PaymentMethod.CARD,
+    ))
+
+    # 14) 캠핑 2인 세트 주말 예약(금 14:00 ~ 월 11:00, 날짜 기준 3일보다 주말 요금이 쌈)
+    friday = _next_weekday(real_now, 4, 3)
+    book_kit(c[0], "캠핑 2인 세트", _at_hour(real_now, friday, 14), _at_hour(real_now, friday + 3, 11),
+             notes="예제: 주말 캠핑")
+
+    # 15) 유모차 2주 예약(주 단가 2주)
+    clock.now = real_now
+    reservations.create_confirmed(ReservationInput(
+        customer_id=c[2], start_at=_at_hour(real_now, 2, 10), due_at=_at_hour(real_now, 16, 10),
+        asset_ids=[a["BBY-0001"]], notes="예제: 여행 기간 대여",
+    ))
+    clock.now = real_now

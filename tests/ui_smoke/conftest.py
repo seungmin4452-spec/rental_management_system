@@ -80,3 +80,21 @@ def opened_documents(monkeypatch):
 
     monkeypatch.setattr(DocumentDialog, "exec", fake_exec)
     return opened
+
+
+@pytest.fixture(autouse=True)
+def opened_starters(monkeypatch):
+    """시작 도우미(R7)는 빈 실제 DB로 메인 창을 열면 뜨므로, 모달로 띄우지 않고 기록한다.
+
+    기록만 하고 건너뛰기·적용은 하지 않는다(테스트가 직접 고른다).
+    """
+    from rentdesk.ui.dialogs.starter_dialog import StarterDialog
+
+    opened: list[StarterDialog] = []
+
+    def fake_exec(self):
+        opened.append(self)
+        return 0
+
+    monkeypatch.setattr(StarterDialog, "exec", fake_exec)
+    return opened

@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "key": "tools",
+  "label": "공구·건설",
+  "description": "전동공구·측량기·발전기·고소작업 장비. 24시간 단위, 주·월 단가 사용.",
+  "order": 20,
+  "categories": [
+    {"name": "전동공구", "turnaround_buffer_minutes": 120, "rate_rule": {"weekly_enabled": true, "monthly_enabled": true}},
+    {"name": "측정·측량", "turnaround_buffer_minutes": 120, "rate_rule": {"weekly_enabled": true, "monthly_enabled": true}},
+    {"name": "발전기·컴프레서", "turnaround_buffer_minutes": 120, "late_multiplier": "1.5", "rate_rule": {"weekly_enabled": true, "monthly_enabled": true}},
+    {"name": "고소작업", "turnaround_buffer_minutes": 120, "late_multiplier": "1.5", "rate_rule": {"weekly_enabled": true, "monthly_enabled": true}},
+    {"name": "운반장비", "turnaround_buffer_minutes": 120, "rate_rule": {"weekly_enabled": true, "monthly_enabled": true}}
+  ]
+}

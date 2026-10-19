@@ -28,6 +28,7 @@ from rentdesk.services.returns import ReturnService
 from rentdesk.services.search import SearchService
 from rentdesk.services.settings import SettingsService
 from rentdesk.services.settlements import SettlementService
+from rentdesk.services.starter import StarterService
 
 
 @dataclass
@@ -57,6 +58,7 @@ class AppContext:
     search: SearchService = field(init=False)
     backup: BackupService = field(init=False)
     imports: ImportService = field(init=False)
+    starter: StarterService = field(init=False)
 
     def __post_init__(self) -> None:
         c, k = self.conn, self.clock
@@ -78,6 +80,7 @@ class AppContext:
         self.search = SearchService(c)
         self.backup = BackupService(c, k)
         self.imports = ImportService(c, k)
+        self.starter = StarterService(c, k)
 
     def now(self) -> datetime:
         return current_time(self.clock)
