@@ -1,4 +1,5 @@
-"""S-09 설정: 운영 정책, 요금 계산 방식(M4.6 R3), 사업자 정보, 백업/복원, 라이선스, 화면 크기, 예제 데이터 모드."""
+"""S-09 설정: 운영 정책, 요금 계산 방식(M4.6 R3), 사업자 정보, 출력물 문구(R6), 백업/복원, 라이선스, 화면 크기,
+예제 데이터 모드."""
 
 from __future__ import annotations
 
@@ -14,6 +15,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -22,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from rentdesk.domain.display import format_dt
+from rentdesk.domain.documents import DEFAULT_RENTAL_TERMS, QUOTE_VALID_DAYS_MAX, TERMS_MAX, TERMS_NOTICE
 from rentdesk.domain.rates import rate_rule_summary
 from rentdesk.platform import paths as platform_paths
 from rentdesk.services import auto_backup
@@ -96,20 +99,59 @@ class SettingsPage(Page):
         rl.addWidget(self.rate_editor)
         rl.addLayout(button_row(save_rate))
 
-        biz_box = QGroupBox("사업자 정보 (엑셀 출력물 헤더)")
+        biz_box = QGroupBox("사업자 정보 (엑셀·확인서·견적서 머리말)")
         bf = QFormLayout(biz_box)
         self.biz_errors = FormErrors(bf)
         self.biz_name = QLineEdit()
         self.biz_name.setMaxLength(100)
         self.biz_phone = QLineEdit()
         self.biz_phone.setMaxLength(30)
+        self.biz_reg_no = QLineEdit()
+        self.biz_reg_no.setMaxLength(20)
+        self.biz_reg_no.setPlaceholderText("예: 123-45-67890 (선택)")
+        self.biz_address = QLineEdit()
+        self.biz_address.setMaxLength(200)
         self.biz_name.setMaximumWidth(FIELD_WIDTH * 2)
         self.biz_phone.setMaximumWidth(FIELD_WIDTH)
+        self.biz_reg_no.setMaximumWidth(FIELD_WIDTH)
+        self.biz_address.setMaximumWidth(FIELD_WIDTH * 3)
         self.biz_errors.add_row("상호", self.biz_name, "business_name")
         self.biz_errors.add_row("전화번호", self.biz_phone, "business_phone")
+        self.biz_errors.add_row("사업자등록번호", self.biz_reg_no, "business_registration_no")
+        self.biz_errors.add_row("주소", self.biz_address, "business_address")
         save_biz = theme.set_variant(QPushButton("사업자 정보 저장"), "primary")
         save_biz.clicked.connect(self.save_business)
         bf.addRow(button_row(save_biz))
+
+        doc_box = QGroupBox("출력물 문구 (대여확인서 약관·견적서)")
+        dcl = QVBoxLayout(doc_box)
+        terms_notice = QLabel(
+            f"{TERMS_NOTICE} 비워 두면 대여확인서에 약관 칸을 넣지 않습니다. "
+            "바꾼 문구는 이후 출력하는 문서부터 적용됩니다."
+        )
+        terms_notice.setWordWrap(True)
+        theme.set_tone(terms_notice, "muted")
+        self.terms = QPlainTextEdit()
+        self.terms.setMinimumHeight(180)
+        self.terms_count = QLabel()
+        theme.set_tone(self.terms_count, "muted")
+        self.terms.textChanged.connect(self._update_terms_count)
+        df = QFormLayout()
+        self.doc_errors = FormErrors(df)
+        self.quote_days = QSpinBox()
+        self.quote_days.setRange(1, QUOTE_VALID_DAYS_MAX)
+        self.quote_days.setSuffix("일")
+        self.quote_days.setMaximumWidth(FIELD_WIDTH)
+        self.doc_errors.add_row("대여 약관", self.terms, "rental_terms")
+        df.addRow("", self.terms_count)
+        self.doc_errors.add_row("견적서 유효기간(견적일로부터)", self.quote_days, "quote_valid_days")
+        reset_terms = QPushButton("기본 약관으로 되돌리기")
+        reset_terms.clicked.connect(self.reset_terms)
+        save_docs = theme.set_variant(QPushButton("출력물 문구 저장"), "primary")
+        save_docs.clicked.connect(self.save_documents)
+        dcl.addWidget(terms_notice)
+        dcl.addLayout(df)
+        dcl.addLayout(button_row(reset_terms, save_docs))
 
         backup_box = QGroupBox("데이터 백업·복원")
         bl = QVBoxLayout(backup_box)
@@ -191,6 +233,7 @@ class SettingsPage(Page):
         lay.addWidget(policy_box)
         lay.addWidget(rate_box)
         lay.addWidget(biz_box)
+        lay.addWidget(doc_box)
         lay.addWidget(backup_box)
         if license_box is not None:
             lay.addWidget(license_box)
@@ -215,6 +258,11 @@ class SettingsPage(Page):
         b = self.ctx.settings.get_business_info()
         self.biz_name.setText(b.name)
         self.biz_phone.setText(b.phone)
+        self.biz_reg_no.setText(b.registration_no)
+        self.biz_address.setText(b.address)
+        d = self.ctx.settings.get_document_settings()
+        self.terms.setPlainText(d.rental_terms)
+        self.quote_days.setValue(d.quote_valid_days)
         self._refresh_backup()
         self._refresh_scale()
         if self.license_panel is not None:
@@ -268,11 +316,34 @@ class SettingsPage(Page):
     def save_business(self) -> bool:
         self.biz_errors.clear()
         ok = feedback.run(self, lambda: self.ctx.settings.update_business_info(
-            name=self.biz_name.text(), phone=self.biz_phone.text()
+            name=self.biz_name.text(), phone=self.biz_phone.text(),
+            address=self.biz_address.text(), registration_no=self.biz_reg_no.text(),
         ), on_domain_error=self.biz_errors.show)
         if ok is None:
             return False
         feedback.info(self, "사업자 정보를 저장했습니다.")
+        return True
+
+    # ------------------------------------------------------------------ 출력물 문구
+
+    def _update_terms_count(self) -> None:
+        n = len(self.terms.toPlainText().strip())
+        self.terms_count.setText(f"{n:,} / {TERMS_MAX:,}자")
+        theme.set_tone(self.terms_count, "danger" if n > TERMS_MAX else "muted")
+
+    def reset_terms(self) -> None:
+        """입력 칸만 기본 약관으로 바꾼다. 저장해야 적용된다."""
+        self.terms.setPlainText(DEFAULT_RENTAL_TERMS)
+
+    def save_documents(self) -> bool:
+        self.doc_errors.clear()
+        saved = feedback.run(self, lambda: self.ctx.settings.update_document_settings(
+            rental_terms=self.terms.toPlainText(), quote_valid_days=self.quote_days.value(),
+        ), on_domain_error=self.doc_errors.show)
+        if saved is None:
+            return False
+        feedback.info(self, "출력물 문구를 저장했습니다.")
+        self.terms.setPlainText(saved.rental_terms)
         return True
 
     # ------------------------------------------------------------------ 화면 크기

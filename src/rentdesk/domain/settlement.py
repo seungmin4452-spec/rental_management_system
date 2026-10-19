@@ -18,8 +18,25 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 
 from rentdesk.domain.errors import ValidationError
+from rentdesk.domain.extra_charges import EXTRA_CHARGE_LABEL, reason_label
 from rentdesk.domain.models import ChargeKind, MoneyKind
 from rentdesk.domain.pricing import validate_won
+
+CHARGE_KIND_LABELS = {
+    ChargeKind.RENTAL: "대여료",
+    ChargeKind.DISCOUNT: "할인",
+    ChargeKind.LATE: "연체료",
+    ChargeKind.DAMAGE: EXTRA_CHARGE_LABEL,
+    ChargeKind.ADJUSTMENT: "조정",
+}
+
+
+def charge_kind_label(kind: ChargeKind, description: str | None) -> str:
+    """청구 줄 '종류' 표시. 추가 비용은 사유까지("추가 비용(세척)")."""
+    if kind == ChargeKind.DAMAGE:
+        return reason_label(description)
+    return CHARGE_KIND_LABELS[ChargeKind(kind)]
+
 
 # 역거래 종류 → 상쇄 대상 원거래 종류
 REVERSAL_OF: dict[MoneyKind, MoneyKind] = {

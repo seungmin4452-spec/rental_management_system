@@ -17,6 +17,7 @@ from rentdesk.services.checkout import CheckoutService
 from rentdesk.services.common import Clock, current_time, default_clock
 from rentdesk.services.customers import CustomerService
 from rentdesk.services.dashboard import DashboardService
+from rentdesk.services.documents import DocumentService
 from rentdesk.services.extensions import ExtensionService
 from rentdesk.services.kits import KitService
 from rentdesk.services.licensing import LicenseService
@@ -52,6 +53,7 @@ class AppContext:
     settings: SettingsService = field(init=False)
     dashboard: DashboardService = field(init=False)
     reports: ReportService = field(init=False)
+    documents: DocumentService = field(init=False)
     search: SearchService = field(init=False)
     backup: BackupService = field(init=False)
     imports: ImportService = field(init=False)
@@ -72,6 +74,7 @@ class AppContext:
         self.settings = SettingsService(c, k)
         self.dashboard = DashboardService(c, k)
         self.reports = ReportService(c, k)
+        self.documents = DocumentService(c, k)
         self.search = SearchService(c)
         self.backup = BackupService(c, k)
         self.imports = ImportService(c, k)

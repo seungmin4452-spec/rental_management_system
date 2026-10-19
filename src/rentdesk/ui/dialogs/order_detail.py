@@ -1,11 +1,12 @@
-"""예약 상세 (S-04 상세 액션): 수정·확정·취소·출고·장비별 반납·정산 내역."""
+"""예약 상세 (S-04 상세 액션): 수정·확정·취소·출고·장비별 반납·정산 내역·문서 출력(R6)."""
 
 from __future__ import annotations
 
-from PySide6.QtWidgets import QDialog, QFormLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QFormLayout, QLabel, QMenu, QPushButton, QVBoxLayout, QWidget
 
 from rentdesk.context import AppContext
 from rentdesk.domain.display import format_dt, format_won
+from rentdesk.domain.documents import DOCUMENT_TITLES, DocumentKind
 from rentdesk.domain.models import ORDER_STATUS_LABELS, OrderStatus
 from rentdesk.domain.policy import buffer_summary
 from rentdesk.services.settlements import has_ledger_activity
@@ -67,6 +68,15 @@ class OrderDetailDialog(QDialog):
         self.return_btn = QPushButton("반납 처리")
         self.extend_btn = QPushButton("연장")
         self.settle_btn = QPushButton("정산 내역")
+        self.doc_btn = QPushButton("문서 출력")
+        self.doc_btn.setToolTip("견적서·대여확인서·반납확인서를 PDF로 저장하거나 인쇄합니다.")
+        doc_menu = QMenu(self.doc_btn)
+        self.doc_actions = {}
+        for kind in (DocumentKind.QUOTE, DocumentKind.RENTAL, DocumentKind.RETURN):
+            action = doc_menu.addAction(DOCUMENT_TITLES[kind])
+            action.triggered.connect(lambda _=False, k=kind: self.open_document(k))
+            self.doc_actions[kind] = action
+        self.doc_btn.setMenu(doc_menu)
         close = QPushButton("닫기")
         self.edit_btn.clicked.connect(self.edit)
         self.confirm_btn.clicked.connect(self.confirm)
@@ -83,7 +93,7 @@ class OrderDetailDialog(QDialog):
         lay.addWidget(self.money)
         lay.addLayout(button_row(self.edit_btn, self.confirm_btn, self.cancel_btn,
                                  self.checkout_btn, self.return_btn, self.extend_btn,
-                                 self.settle_btn, close))
+                                 self.settle_btn, self.doc_btn, close))
         self.refresh()
 
     def refresh(self) -> None:
@@ -169,6 +179,10 @@ class OrderDetailDialog(QDialog):
             st in (OrderStatus.CONFIRMED, OrderStatus.IN_RENTAL, OrderStatus.COMPLETED)
             or (st == OrderStatus.CANCELED and has_ledger_activity(self.ctx.settlements.summary(self.order_id)))
         )
+        available = set(self.ctx.documents.available(self.order_id))
+        for kind, action in self.doc_actions.items():
+            action.setEnabled(kind in available)
+        self.doc_btn.setEnabled(bool(available))
 
     def _after(self, ok: bool) -> None:
         if ok:
@@ -233,3 +247,8 @@ class OrderDetailDialog(QDialog):
         dlg = SettlementDialog(self.ctx, self.order_id, self)
         dlg.exec()
         self._after(dlg.changed)
+
+    def open_document(self, kind: DocumentKind) -> None:
+        from rentdesk.ui.dialogs.document_dialog import open_document
+
+        open_document(self, self.ctx, self.order_id, kind)

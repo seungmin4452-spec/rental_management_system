@@ -14,6 +14,7 @@ from rentdesk.services.calendar import CalendarService
 from rentdesk.services.checkout import CheckoutInput, CheckoutService
 from rentdesk.services.customers import CustomerInput, CustomerService
 from rentdesk.services.dashboard import DashboardService
+from rentdesk.services.documents import DocumentService
 from rentdesk.services.extensions import ExtensionService
 from rentdesk.services.kits import KitService
 from rentdesk.services.maintenance import MaintenanceService
@@ -59,6 +60,7 @@ class Services:
         self.settlements = SettlementService(conn, clock)
         self.dashboard = DashboardService(conn, clock)
         self.reports = ReportService(conn, clock)
+        self.documents = DocumentService(conn, clock)
         self.search = SearchService(conn)
 
     def add_asset(self, code: str, *, rate: int = 30_000, deposit: int = 100_000,

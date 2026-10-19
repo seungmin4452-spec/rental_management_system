@@ -65,3 +65,18 @@ def svc(conn, clock):
 @pytest.fixture
 def ctx(conn, clock, ui):
     return AppContext(conn, clock)
+
+
+@pytest.fixture(autouse=True)
+def opened_documents(monkeypatch):
+    """확인서 미리보기 창(R6)을 모달로 띄우지 않고 기록한다(출고·반납 후 자동으로 열리므로)."""
+    from rentdesk.ui.dialogs.document_dialog import DocumentDialog
+
+    opened: list[DocumentDialog] = []
+
+    def fake_exec(self):
+        opened.append(self)
+        return 1
+
+    monkeypatch.setattr(DocumentDialog, "exec", fake_exec)
+    return opened

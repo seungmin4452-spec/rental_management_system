@@ -23,29 +23,18 @@ from PySide6.QtWidgets import (
 from rentdesk.context import AppContext
 from rentdesk.domain.display import format_dt, format_won
 from rentdesk.domain.errors import DomainError
-from rentdesk.domain.extra_charges import EXTRA_CHARGE_LABEL, reason_label
-from rentdesk.domain.models import ORDER_STATUS_LABELS, ChargeKind, MoneyKind, OrderStatus
-from rentdesk.domain.settlement import INTERNAL_KINDS, MONEY_KIND_LABELS, REVERSAL_OF
+from rentdesk.domain.models import ORDER_STATUS_LABELS, MoneyKind, OrderStatus
+from rentdesk.domain.settlement import (  # noqa: F401 — CHARGE_KIND_LABELS는 예전 이름 호환
+    CHARGE_KIND_LABELS,
+    INTERNAL_KINDS,
+    MONEY_KIND_LABELS,
+    REVERSAL_OF,
+    charge_kind_label,
+)
 from rentdesk.services.settlements import FINAL_STATUSES, MoneyInput
 from rentdesk.ui import feedback, theme
 from rentdesk.ui.dialogs.checkout_dialog import PAYMENT_LABELS, payment_combo
 from rentdesk.ui.widgets import DataTable, FormErrors, WonSpinBox, button_row
-
-CHARGE_KIND_LABELS = {
-    ChargeKind.RENTAL: "대여료",
-    ChargeKind.DISCOUNT: "할인",
-    ChargeKind.LATE: "연체료",
-    ChargeKind.DAMAGE: EXTRA_CHARGE_LABEL,
-    ChargeKind.ADJUSTMENT: "조정",
-}
-
-
-def charge_kind_label(kind: ChargeKind, description: str | None) -> str:
-    """정산 화면 '종류' 칸. 추가 비용은 사유까지("추가 비용(세척)")."""
-    if kind == ChargeKind.DAMAGE:
-        return reason_label(description)
-    return CHARGE_KIND_LABELS[kind]
-
 
 SETTLE_NOTICE = "반납 완료 여부와 별도로 미수금/보증금 보유액을 정산해야 합니다."
 

@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QFormLayout,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from rentdesk.context import AppContext
 from rentdesk.domain.display import format_dt, format_won
+from rentdesk.domain.documents import DocumentKind
 from rentdesk.domain.models import PaymentMethod, RentalOrder
 from rentdesk.services.checkout import CheckoutInput
 from rentdesk.ui import feedback, theme
@@ -30,6 +32,8 @@ from rentdesk.ui.widgets import (
     button_row,
     now_seoul_minute,
 )
+
+OPEN_DOC_PREF = "open_rental_doc_after_checkout"  # 기기별 체크 상태 기억
 
 PAYMENT_LABELS = {
     PaymentMethod.CASH: "현금",
@@ -98,6 +102,10 @@ class CheckoutDialog(QDialog):
         self._remaining = (0, 0)
         self.errors.add_row("결제수단(기록용)", self.method, "payment_method")
 
+        self.open_doc = QCheckBox("출고 후 대여확인서 열기 (PDF 저장·인쇄, 고객 서명용)")
+        prefs = ctx.preferences
+        self.open_doc.setChecked(bool(prefs.get(OPEN_DOC_PREF, True)) if prefs is not None else True)
+
         self.submit_btn = theme.set_variant(QPushButton("출고 확정"), "primary")
         self.submit_btn.clicked.connect(self.submit)
         cancel = QPushButton("취소")
@@ -110,6 +118,7 @@ class CheckoutDialog(QDialog):
         lay.addWidget(self.amounts)
         lay.addLayout(form)
         lay.addWidget(self.blockers)
+        lay.addWidget(self.open_doc)
         lay.addLayout(button_row(cancel, self.submit_btn))
         self.refresh_preview()
 
@@ -178,4 +187,14 @@ class CheckoutDialog(QDialog):
         self.result_order = result
         feedback.info(self, f"{result.order_no} 출고가 완료되었습니다.")
         self.accept()
+        if self.ctx.preferences is not None:
+            feedback.run(self, lambda: self.ctx.preferences.set(OPEN_DOC_PREF, self.open_doc.isChecked()))
+        if self.open_doc.isChecked():
+            self.show_document()
         return True
+
+    def show_document(self) -> None:
+        """출고 직후 대여확인서 미리보기(테스트에서 바꿔 끼울 수 있다)."""
+        from rentdesk.ui.dialogs.document_dialog import open_document
+
+        open_document(self.parentWidget() or self, self.ctx, self.order_id, DocumentKind.RENTAL)

@@ -1,4 +1,4 @@
-"""운영 설정(유예시간·연체 배수·반납 후 준비 시간)·요금 규칙과 출력물용 사업자 정보 조회/변경 (PRD S-09).
+"""운영 설정(유예시간·연체 배수·반납 후 준비 시간)·요금 규칙과 출력물용 사업자 정보·문서 문구 조회/변경 (PRD S-09).
 
 운영 설정 변경값은 이후 확정되는 예약에만 스냅샷으로 적용되며 기존 약정에 소급되지 않는다.
 """
@@ -11,6 +11,12 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from decimal import Decimal
 
+from rentdesk.domain.documents import (
+    DEFAULT_RENTAL_TERMS,
+    QUOTE_VALID_DAYS_DEFAULT,
+    clean_terms,
+    validate_quote_valid_days,
+)
 from rentdesk.domain.errors import ValidationError
 from rentdesk.domain.models import Asset, RentalPolicy
 from rentdesk.domain.policy import effective_policy, effective_rate_rule
@@ -25,10 +31,32 @@ MAX_MINUTES = 7 * 24 * 60
 
 @dataclass(frozen=True)
 class BusinessInfo:
-    """출력물(엑셀) 헤더용 사업자 정보. 고객사별 하드코딩 없이 사용자가 입력한다."""
+    """출력물(엑셀·확인서) 머리말용 사업자 정보. 고객사별 하드코딩 없이 사용자가 입력한다."""
 
     name: str = ""
     phone: str = ""
+    address: str = ""  # R6: 확인서·견적서에만 표시
+    registration_no: str = ""
+
+
+@dataclass(frozen=True)
+class DocumentSettings:
+    """확인서·견적서 문구(R6). 약관을 한 번도 저장하지 않았으면 기본 약관을 쓴다."""
+
+    rental_terms: str = DEFAULT_RENTAL_TERMS
+    quote_valid_days: int = QUOTE_VALID_DAYS_DEFAULT
+
+    @property
+    def is_default_terms(self) -> bool:
+        return self.rental_terms == DEFAULT_RENTAL_TERMS
+
+
+def _setting_or(conn: sqlite3.Connection, key: str, default: object) -> object:
+    """R6에서 추가한 설정 키는 마이그레이션 없이 '없으면 기본값'으로 읽는다."""
+    try:
+        return repo.get_setting(conn, key)
+    except KeyError:
+        return default
 
 
 def read_policy(conn: sqlite3.Connection) -> RentalPolicy:
@@ -70,6 +98,18 @@ def read_business_info(conn: sqlite3.Connection) -> BusinessInfo:
     return BusinessInfo(
         name=str(repo.get_setting(conn, "business_name") or ""),
         phone=str(repo.get_setting(conn, "business_phone") or ""),
+        address=str(_setting_or(conn, "business_address", "") or ""),
+        registration_no=str(_setting_or(conn, "business_registration_no", "") or ""),
+    )
+
+
+def read_document_settings(conn: sqlite3.Connection) -> DocumentSettings:
+    terms = _setting_or(conn, "rental_terms", None)
+    days = _setting_or(conn, "quote_valid_days", QUOTE_VALID_DAYS_DEFAULT)
+    return DocumentSettings(
+        rental_terms=DEFAULT_RENTAL_TERMS if terms is None else str(terms),
+        quote_valid_days=days if isinstance(days, int) and not isinstance(days, bool)
+        else QUOTE_VALID_DAYS_DEFAULT,
     )
 
 
@@ -135,15 +175,43 @@ class SettingsService:
     def get_business_info(self) -> BusinessInfo:
         return read_business_info(self._conn)
 
-    def update_business_info(self, *, name: str, phone: str) -> BusinessInfo:
+    def update_business_info(
+        self, *, name: str, phone: str, address: str | None = None, registration_no: str | None = None,
+    ) -> BusinessInfo:
+        """주소·사업자등록번호를 넘기지 않으면(None) 기존 값을 유지한다."""
         clean_name = clean_optional(name, "business_name", "상호", 100) or ""
         clean_phone = clean_optional(phone, "business_phone", "사업자 전화번호", 30) or ""
+        clean_address = (None if address is None
+                         else clean_optional(address, "business_address", "주소", 200) or "")
+        clean_reg = (None if registration_no is None
+                     else clean_optional(registration_no, "business_registration_no", "사업자등록번호", 20) or "")
         now = current_time(self._clock)
         with transaction(self._conn):
             repo.set_setting(self._conn, "business_name", clean_name)
             repo.set_setting(self._conn, "business_phone", clean_phone)
+            if clean_address is not None:
+                repo.set_setting(self._conn, "business_address", clean_address)
+            if clean_reg is not None:
+                repo.set_setting(self._conn, "business_registration_no", clean_reg)
             repo.insert_audit(
                 self._conn, entity_type="settings", entity_id=None, action="UPDATE_BUSINESS",
                 description=None, now=now,
             )
         return read_business_info(self._conn)
+
+    def get_document_settings(self) -> DocumentSettings:
+        return read_document_settings(self._conn)
+
+    def update_document_settings(self, *, rental_terms: str, quote_valid_days: int) -> DocumentSettings:
+        """약관 문구(비우면 약관 칸 없이 출력)와 견적 유효기간. 이미 출력한 문서에는 영향이 없다."""
+        terms = clean_terms(rental_terms)
+        days = validate_quote_valid_days(quote_valid_days)
+        now = current_time(self._clock)
+        with transaction(self._conn):
+            repo.set_setting(self._conn, "rental_terms", terms)
+            repo.set_setting(self._conn, "quote_valid_days", days)
+            repo.insert_audit(
+                self._conn, entity_type="settings", entity_id=None, action="UPDATE_DOCUMENTS",
+                description=f"terms={len(terms)}자, quote_valid_days={days}", now=now,
+            )
+        return self.get_document_settings()

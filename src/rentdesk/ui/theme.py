@@ -42,7 +42,9 @@ from rentdesk.domain.availability import ASSET_STATE_LABELS, AssetState
 from rentdesk.domain.models import ORDER_STATUS_LABELS, OrderStatus
 from rentdesk.platform.resources import get_resources_dir
 
-FONT_FAMILIES = ["Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR"]
+# 한국어 OS에서는 Qt가 글꼴 이름을 한글로 알려준다("맑은 고딕") — 영문·한글 이름을 모두 둔다.
+FONT_FAMILIES = ["Pretendard", "Apple SD Gothic Neo", "애플 SD 산돌고딕 Neo", "Malgun Gothic", "맑은 고딕",
+                 "Noto Sans KR"]
 
 
 @dataclass(frozen=True)
@@ -303,10 +305,11 @@ def build_stylesheet(tokens: Tokens) -> str:
     )
 
 
-def _font_families() -> list[str]:
+def font_families() -> list[str]:
     """설치된 글꼴만 넘긴다(없는 이름은 Qt가 매번 대체 글꼴을 찾느라 느려지고 경고를 남긴다)."""
     installed = set(QFontDatabase.families())
     return [f for f in FONT_FAMILIES if f in installed] or FONT_FAMILIES[-1:]
+
 
 
 def system_is_dark() -> bool:
@@ -341,7 +344,7 @@ def apply_theme(app: QApplication, *, dark: bool | None = None, follow_system: b
     _current = DARK if (system_is_dark() if dark is None else dark) else LIGHT
     app.setStyle("Fusion")
     font = QFont()
-    font.setFamilies(_font_families())
+    font.setFamilies(font_families())
     font.setPixelSize(14)
     app.setFont(font)
     app.setPalette(_palette(_current))

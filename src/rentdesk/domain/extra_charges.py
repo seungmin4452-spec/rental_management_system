@@ -93,3 +93,13 @@ def missing_part_memo(kits: Iterable[tuple[str, Iterable[str]]]) -> str | None:
     parts = [f"{name}: {', '.join(labels)}" for name, labels in kits if labels]
     text = " / ".join(parts)
     return text[:MEMO_MAX] or None
+
+
+def short_text(description: str | None) -> str:
+    """확인서 칸용 짧은 설명: "CAM-1 추가 비용(세척): 얼룩" → "세척: 얼룩", 예전 "CAM-1 파손비" → "파손"."""
+    reason = reason_of(description)
+    if reason is None:
+        return description or ""
+    label = EXTRA_CHARGE_REASON_LABELS[reason]
+    _, sep, memo = (description or "").partition(": ")
+    return f"{label}: {memo}" if sep and memo else label

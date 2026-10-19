@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from rentdesk.context import AppContext
 from rentdesk.domain.display import format_dt, format_won
+from rentdesk.domain.documents import DocumentKind
 from rentdesk.domain.errors import DomainError
 from rentdesk.domain.extra_charges import (
     EXTRA_CHARGE_LABEL,
@@ -41,6 +42,7 @@ from rentdesk.ui import feedback, theme
 from rentdesk.ui.kit_checklist import KitChecklistBox
 from rentdesk.ui.widgets import SeoulDateTimeEdit, WonSpinBox, button_row, now_seoul_minute
 
+OPEN_DOC_PREF = "open_return_doc_after_return"  # 기기별 체크 상태 기억
 CONDITION_LABELS = {ReturnCondition.GOOD: "정상", ReturnCondition.MAINTENANCE_REQUIRED: "정비 필요"}
 
 
@@ -144,6 +146,9 @@ class ReturnDialog(QDialog):
         self.total = QLabel()
         select_all = QPushButton("전체 선택")
         select_all.clicked.connect(lambda: [r.check.setChecked(True) for r in self.rows])
+        self.open_doc = QCheckBox("반납 후 반납확인서 열기 (PDF 저장·인쇄)")
+        prefs = ctx.preferences
+        self.open_doc.setChecked(bool(prefs.get(OPEN_DOC_PREF, True)) if prefs is not None else True)
         self.submit_btn = theme.set_variant(QPushButton("선택 장비 반납 확정"), "primary")
         self.submit_btn.clicked.connect(self.submit)
         cancel = QPushButton("취소")
@@ -157,6 +162,7 @@ class ReturnDialog(QDialog):
         lay.addWidget(scroll, 1)
         lay.addWidget(self.kit_checks)
         lay.addWidget(self.total)
+        lay.addWidget(self.open_doc)
         lay.addLayout(button_row(select_all, cancel, self.submit_btn))
         self._update_total()
 
@@ -250,7 +256,17 @@ class ReturnDialog(QDialog):
         self.result = result
         self._report(result)
         self.accept()
+        if self.ctx.preferences is not None:
+            feedback.run(self, lambda: self.ctx.preferences.set(OPEN_DOC_PREF, self.open_doc.isChecked()))
+        if self.open_doc.isChecked():
+            self.show_document()
         return True
+
+    def show_document(self) -> None:
+        """반납 직후 반납확인서 미리보기(테스트에서 바꿔 끼울 수 있다)."""
+        from rentdesk.ui.dialogs.document_dialog import open_document
+
+        open_document(self.parentWidget() or self, self.ctx, self.order_id, DocumentKind.RETURN)
 
     def _report(self, result: ReturnResult) -> None:
         msg = [f"{len(result.lines)}개 장비 반납이 완료되었습니다."]
