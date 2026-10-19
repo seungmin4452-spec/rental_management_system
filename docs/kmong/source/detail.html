@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><title>상세 이미지</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 860px; background: #FF00FF; }
+  section { background: #F2F4F6; }
+  body { font-family: "Malgun Gothic", sans-serif; color: #191F28; letter-spacing: -0.4px; }
+  section { display: none; width: 860px; padding: 72px 60px; }
+  section:target { display: block; }
+  .eyebrow { color: #1B64DA; font-weight: 700; font-size: 20px; }
+  h2 { font-size: 40px; line-height: 1.3; font-weight: 800; margin-top: 10px; letter-spacing: -1.2px; }
+  .lead { font-size: 21px; color: #4E5968; margin-top: 16px; line-height: 1.6; }
+  .shot { margin-top: 36px; background: #fff; border-radius: 14px; overflow: hidden;
+          box-shadow: 0 8px 30px rgba(0,0,0,.10); }
+  .shot img { width: 100%; display: block; }
+  .points { margin-top: 32px; display: grid; gap: 14px; }
+  .point { background: #fff; border-radius: 12px; padding: 20px 24px; font-size: 20px; line-height: 1.5; }
+  .point b { color: #1B64DA; }
+  .caption { margin-top: 14px; font-size: 15px; color: #8B95A1; text-align: right; }
+
+  /* 1. intro */
+  #s1 { background: #fff; }
+  .pain { margin-top: 36px; display: grid; gap: 14px; }
+  .pain div { background: #F2F4F6; border-radius: 12px; padding: 20px 24px; font-size: 21px; }
+  .pain div::before { content: "✕"; color: #C62828; font-weight: 800; margin-right: 14px; }
+  .arrow { text-align: center; font-size: 40px; color: #1B64DA; margin: 28px 0 18px; }
+  .solve { background: #1B64DA; color: #fff; border-radius: 16px; padding: 36px; text-align: center; }
+  .solve h3 { font-size: 32px; font-weight: 800; letter-spacing: -1px; }
+  .solve p { font-size: 19px; opacity: .9; margin-top: 10px; }
+  .trio { margin-top: 28px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .trio div { background: #E8F3FF; border-radius: 14px; padding: 26px 16px; text-align: center; }
+  .trio .big { font-size: 24px; font-weight: 800; color: #1B64DA; }
+  .trio .small { font-size: 16px; color: #4E5968; margin-top: 8px; line-height: 1.5; }
+
+  /* 6. features */
+  .grid { margin-top: 36px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .card { background: #fff; border-radius: 14px; padding: 24px; }
+  .card h4 { font-size: 21px; font-weight: 800; color: #1B64DA; }
+  .card ul { margin-top: 10px; padding-left: 0; list-style: none; }
+  .card li { font-size: 17px; line-height: 1.75; color: #333D4B; }
+  .card li::before { content: "· "; }
+
+  /* 7. packages */
+  .pkgs { margin-top: 36px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .pkg { background: #fff; border-radius: 14px; padding: 26px 18px; text-align: center; border: 2px solid transparent; }
+  .pkg.main { border-color: #1B64DA; }
+  .pkg .name { font-size: 18px; font-weight: 800; color: #4E5968; }
+  .pkg .price { font-size: 28px; font-weight: 800; margin-top: 8px; }
+  .pkg .desc { font-size: 16px; color: #4E5968; margin-top: 12px; line-height: 1.55; }
+  .note { margin-top: 12px; font-size: 15px; color: #6B7684; }
+  h3.sub { font-size: 26px; font-weight: 800; margin-top: 52px; }
+  .steps { margin-top: 18px; display: grid; gap: 10px; }
+  .step { background: #fff; border-radius: 12px; padding: 18px 22px; font-size: 19px; display: flex; gap: 16px; align-items: center; }
+  .step .n { flex: none; width: 34px; height: 34px; border-radius: 17px; background: #1B64DA; color: #fff;
+             font-weight: 800; display: flex; align-items: center; justify-content: center; font-size: 17px; }
+  .env { margin-top: 18px; background: #fff; border-radius: 12px; padding: 22px 24px; font-size: 18px; line-height: 1.8; color: #333D4B; }
+  .env b { color: #191F28; }
+</style></head>
+<body>
+
+<section id="s1">
+  <p class="eyebrow">렌탈샵 사장님, 이런 고민 있으셨나요?</p>
+  <h2>엑셀과 달력으로 관리하다<br>생기는 실수들</h2>
+  <div class="pain">
+    <div>같은 장비에 예약이 두 번 잡혔다</div>
+    <div>반납 날짜가 지났는데 아무도 몰랐다</div>
+    <div>연체료·보증금 계산이 매번 헷갈린다</div>
+    <div>일부만 먼저 돌아오면 정산이 꼬인다</div>
+  </div>
+  <div class="arrow">▼</div>
+  <div class="solve">
+    <h3>렌탈데스크가 대신 챙겨 드립니다</h3>
+    <p>장비 한 대 한 대를 고유 번호로 관리하는 렌탈샵 전용 프로그램</p>
+  </div>
+  <div class="trio">
+    <div><p class="big">1회 구매</p><p class="small">월 구독료 없이<br>계속 사용</p></div>
+    <div><p class="big">오프라인</p><p class="small">인터넷 연결 없이<br>내 PC에서 실행</p></div>
+    <div><p class="big">내 PC 저장</p><p class="small">고객 정보를<br>외부로 보내지 않음</p></div>
+  </div>
+  <p class="caption">1회 구매·계속 사용은 평생 라이선스 패키지 기준입니다.</p>
+</section>
+
+<section id="s2">
+  <p class="eyebrow">대시보드</p>
+  <h2>오늘 할 일이<br>한 화면에 모입니다</h2>
+  <p class="lead">오늘 출고·반납할 장비, 연체 중인 장비, 아직 정산이 안 된 예약을<br>프로그램을 켜자마자 확인하세요.</p>
+  <div class="shot"><img src="img/dashboard.png" alt=""></div>
+  <div class="points">
+    <div class="point"><b>연체 경고</b> — 연체 장비 때문에 다음 예약이 위험하면 바로 알려 줍니다</div>
+    <div class="point"><b>미정산 표시</b> — 반납은 끝났지만 받을 돈이 남은 예약을 놓치지 않습니다</div>
+  </div>
+  <p class="caption">화면은 예제 데이터입니다.</p>
+</section>
+
+<section id="s3">
+  <p class="eyebrow">예약 달력 · 중복 예약 차단</p>
+  <h2>같은 장비의 겹치는 예약은<br>저장 자체가 되지 않습니다</h2>
+  <p class="lead">카메라 A 1번과 2번을 따로 관리하기 때문에,<br>어떤 장비가 언제 비어 있는지 정확히 보입니다.</p>
+  <div class="shot"><img src="img/calendar.png" alt=""></div>
+  <div class="points">
+    <div class="point"><b>달력에서 바로 예약</b> — 빈 칸을 끌어 장비와 날짜를 고르면 새 예약</div>
+    <div class="point"><b>반납 후 준비 시간</b> — 세척·점검 시간을 비워 두고 다음 예약을 받습니다</div>
+  </div>
+  <p class="caption">화면은 예제 데이터입니다.</p>
+</section>
+
+<section id="s4">
+  <p class="eyebrow">반납 · 연체료</p>
+  <h2>연체료와 추가 비용,<br>계산 근거까지 보여 줍니다</h2>
+  <p class="lead">약정 반납 시각, 기다려 주는 시간, 일 대여료를 바탕으로<br>연체료를 자동 계산하고 어떻게 나왔는지 함께 표시합니다.</p>
+  <div class="shot"><img src="img/return_dialog.png" alt=""></div>
+  <div class="points">
+    <div class="point"><b>일부만 먼저 반납</b> — 돌아온 장비만 골라 반납 처리</div>
+    <div class="point"><b>추가 비용</b> — 파손·분실·세척·구성품 누락 사유와 함께 청구</div>
+  </div>
+  <p class="caption">화면은 예제 데이터입니다.</p>
+</section>
+
+<section id="s5">
+  <p class="eyebrow">대여확인서 · 반납확인서 · 견적서</p>
+  <h2>버튼 한 번으로<br>PDF 저장하고 인쇄하세요</h2>
+  <p class="lead">가게 이름, 사업자 정보, 약관 문구를 직접 바꿔 쓸 수 있습니다.</p>
+  <div class="shot"><img src="img/rental_doc.png" alt=""></div>
+  <p class="caption">화면은 예제 데이터입니다. 약관 문구는 업체에 맞게 수정해 사용하세요.</p>
+</section>
+
+<section id="s6">
+  <p class="eyebrow">주요 기능</p>
+  <h2>렌탈 업무 처음부터 끝까지</h2>
+  <div class="grid">
+    <div class="card"><h4>예약</h4><ul>
+      <li>장비별 고유 번호 관리</li><li>겹치는 예약 저장 차단</li>
+      <li>예약 달력 (주·월 보기)</li><li>예약 연장 · 예약금 기록</li></ul></div>
+    <div class="card"><h4>출고 · 반납</h4><ul>
+      <li>오늘 출고·반납 목록</li><li>일부 장비 먼저 반납</li>
+      <li>세트 구성품 체크리스트</li><li>고장 장비 예약 자동 차단</li></ul></div>
+    <div class="card"><h4>요금 · 정산</h4><ul>
+      <li>1일 · 1박 2일 · 주말 · 주 · 월 요금</li><li>연체료 자동 계산</li>
+      <li>보증금 차감 · 반환 기록</li><li>미정산 예약 표시</li></ul></div>
+    <div class="card"><h4>문서 · 보고서</h4><ul>
+      <li>대여·반납확인서, 견적서 PDF</li><li>엑셀 보고서 5종</li>
+      <li>기존 엑셀 목록 가져오기</li><li>약관 문구 직접 수정</li></ul></div>
+    <div class="card"><h4>데이터 보호</h4><ul>
+      <li>종료 시 하루 1회 자동 백업</li><li>백업 파일로 새 PC 이전</li>
+      <li>인터넷 연결 불필요</li><li>고객 정보 외부 전송 없음</li></ul></div>
+    <div class="card"><h4>업종 맞춤 시작</h4><ul>
+      <li>카메라 · 공구 · 캠핑 · 행사 · 유아</li><li>취급 장비만 고르면 기본 설정</li>
+      <li>카테고리별 연체·준비 시간</li><li>장비 세트(키트) 구성</li></ul></div>
+  </div>
+</section>
+
+<section id="s7">
+  <p class="eyebrow">패키지 안내</p>
+  <h2>필요한 만큼 고르세요</h2>
+  <div class="pkgs">
+    <div class="pkg"><p class="name">STANDARD</p><p class="price">99,000원</p>
+      <p class="desc">PC 1대<br>1개월 라이선스</p></div>
+    <div class="pkg main"><p class="name">DELUXE</p><p class="price">199,000원</p>
+      <p class="desc">PC 1대<br>평생 라이선스</p></div>
+    <div class="pkg"><p class="name">PREMIUM</p><p class="price">279,000원</p>
+      <p class="desc">PC 2대<br>평생 라이선스 2개</p></div>
+  </div>
+  <p class="note">· PREMIUM의 두 PC 데이터는 서로 연동되지 않습니다.<br>· STANDARD(1개월) 결제 금액은 이후 구매 시 차감되지 않습니다.</p>
+
+  <h3 class="sub">구매 후 진행 순서</h3>
+  <div class="steps">
+    <div class="step"><span class="n">1</span>크몽 메시지로 설치 파일과 설치 안내서를 받습니다</div>
+    <div class="step"><span class="n">2</span>설치 후 실행하면 화면에 '기기 코드'가 나옵니다</div>
+    <div class="step"><span class="n">3</span>기기 코드를 크몽 메시지로 보내 주세요</div>
+    <div class="step"><span class="n">4</span>받은 라이선스 파일을 등록하면 사용 시작</div>
+  </div>
+
+  <h3 class="sub">지원 환경</h3>
+  <div class="env">
+    <b>Windows 11 (64비트)</b><br>
+    Mac, Windows 10, 태블릿, 휴대폰은 현재 지원하지 않습니다.<br>
+    여러 PC·직원이 같은 데이터를 함께 쓰는 기능은 없습니다.
+  </div>
+</section>
+
+</body></html>

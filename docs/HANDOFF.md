@@ -3,7 +3,12 @@
 > 이 문서는 단계가 끝날 때마다 **덮어써서 최신 상태만** 남긴다. 지난 내역은 git 커밋 로그, `docs/PROGRESS_REPORT.md`(M0~M4 요약), `USABILITY_PLAN.md` "진행 기록"(M4.5 단계별), `OPEN_QUESTIONS.md`(결정 근거)에서 확인한다.
 > 새 세션은 **이 문서 → `CLAUDE.md` → `USABILITY_PLAN.md` → `TASKS.md`** 순서로 읽으면 바로 이어서 작업할 수 있다.
 
-## 현재 상태 (2026-10-19): **M4.6 범용화 R1~R7 모두 완료** — 다음은 macOS 전체 테스트·수동 화면 확인, `main` 병합 여부 결정, M4 남은 항목(서명·공증·Windows 빌드)
+## 현재 상태 (2026-10-19): **M4.6 범용화 R1~R7 완료 → 크몽 판매 준비(K 단계) 시작**
+
+- **2026-10-19 크몽 등록 문구·이미지 확정.** Windows 11 x64만 먼저 판매, 사용자는 **크몽 심사를 바로 신청**하기로 함 → 첫 주문 전에 Windows 설치 파일(K1)과 깨끗한 PC 검증(K2)이 끝나야 한다. 가격·정책 결정은 `KMONG_LAUNCH_PLAN.md` 0장, 등록 원문은 `docs/kmong_listing.md`, 이미지는 `docs/kmong/`.
+- **다음 할 일은 `KMONG_LAUNCH_PLAN.md`의 K1~K12**(필수: K1·K2·K3·K5·K6·K7·K9·K10. 사용자 결정: 맥북에서만 발급, 만료 임박 안내, 업데이트 미구매 시 새 버전 차단). 바로 시작할 것: Inno Setup 6 설치 → 버전 1.0.0 → `scripts\build_windows.ps1`.
+- 커밋 안 된 이전 작업이 있다: `ui/wheel_guard.py`(새 파일), `document_dialog.py`·`settlement_dialog.py`·`theme.py` 수정, `tests/ui_smoke/test_usability_fixes.py`. 이번 세션에서 만든 것이 아니므로 내용 확인 후 커밋(K10).
+- 아래는 M4.6까지의 기록이다.
 
 - **M4.6 R1("기타" 카테고리)·R2(카테고리별 운영 설정, 품목별 준비 시간 스냅샷) 완료**, Windows PC에서 커밋해 브랜치 `m4.5-usability`로 푸시. 맥북에서는 `git fetch && git switch m4.5-usability && git pull` 후 `pip install -e '.[dev,build]'`(새 의존성 없음)로 이어간다. 상세·다음 작업 위치는 `MULTI_INDUSTRY_PLAN.md` "진행 기록".
 - **2026-10-19 R3(요금 방식 확장) 완료** — 스키마 버전 **6**(`006_rate_rules`). 상세·가정(시간 단위 연체 N=10 등)은 `MULTI_INDUSTRY_PLAN.md` 진행 기록.
